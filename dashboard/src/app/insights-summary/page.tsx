@@ -64,7 +64,8 @@ import { InlineFeedbackModal } from "@/components/dashboard/rich-insight-card";
 import { KpiDeepDiveModal, ClickableKpiCard, KpiDeepDiveConfig } from "@/components/dashboard/kpi-deep-dive-modal";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
-const AVG_ATS = 2.5;
+/** Avg ticket size (Lakh): MTD 1528 Cr / 83401 loans ≈ 1.83 L */
+const AVG_ATS = 1.83;
 const LENDER_AOP: Record<string, number> = {
   FULLERTON: 120, KSF: 80, PIRAMAL: 60, SHRIRAM: 55,
   NACL: 45, PYFL: 40, MFL: 35, UCL: 30,

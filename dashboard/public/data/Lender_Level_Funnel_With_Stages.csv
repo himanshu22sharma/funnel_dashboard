@@ -1,301 +1,141 @@
 lender,product_type,isautoleadcreated,major_index,major_stage,Leads,Conv. %
-FULLERTON,Fresh,Flow1(Auto),6,Child_Lead_Created,10584,
-FULLERTON,Fresh,Flow1(Auto),7,Selfie uploaded,9113,86.10
-FULLERTON,Fresh,Flow1(Auto),8,KYC completed,7798,85.57
-FULLERTON,Fresh,Flow2(Manual),6,Child_Lead_Created,7214,
-FULLERTON,Fresh,Flow2(Manual),7,Selfie uploaded,6412,88.88
-FULLERTON,Fresh,Flow2(Manual),8,KYC completed,5494,85.68
-FULLERTON,Fresh,Flow1(Auto),9,BRE2 completed,4978,63.84
-FULLERTON,Fresh,Flow1(Auto),10,Disbursal acc verified,4916,98.75
-FULLERTON,Fresh,Flow1(Auto),11,Review submit,4474,91.01
-FULLERTON,Fresh,Flow2(Manual),9,BRE2 completed,4172,75.94
-FULLERTON,Fresh,Flow2(Manual),10,Disbursal acc verified,4113,98.59
-FULLERTON,Renewal,Flow1(Auto),6,Child_Lead_Created,4018,
-FULLERTON,Fresh,Flow1(Auto),12,Mandate done,3997,89.34
-FULLERTON,Fresh,Flow1(Auto),13,Application submitted by user,3986,99.72
-FULLERTON,Fresh,Flow2(Manual),11,Review submit,3834,93.22
-FULLERTON,Renewal,Flow1(Auto),7,Selfie uploaded,3772,93.88
-FULLERTON,Renewal,Flow1(Auto),8,KYC completed,3437,91.12
-FULLERTON,Fresh,Flow2(Manual),12,Mandate done,3363,87.72
-FULLERTON,Fresh,Flow2(Manual),13,Application submitted by user,3360,99.91
-PIRAMAL,Fresh,Flow1(Auto),6,Child_Lead_Created,2661,
-SHRIRAM,Fresh,Flow1(Auto),6,Child_Lead_Created,2586,
-FULLERTON,Fresh,Flow2(Manual),14,Submit to LMS,2574,76.61
-KSF,Fresh,Flow1(Auto),6,Child_Lead_Created,2530,
-FULLERTON,Fresh,Flow1(Auto),14,Submit to LMS,2509,62.95
-FULLERTON,Fresh,Flow2(Manual),15,Disbursed,2338,90.83
-SHRIRAM,Fresh,Flow1(Auto),7,Selfie uploaded,2338,90.41
-PIRAMAL,Fresh,Flow1(Auto),7,Selfie uploaded,2311,86.85
-FULLERTON,Fresh,Flow1(Auto),15,Disbursed,2253,89.80
-KSF,Fresh,Flow1(Auto),7,Selfie uploaded,2202,87.04
-FULLERTON,Renewal,Flow1(Auto),9,BRE2 completed,1970,57.32
-FULLERTON,Renewal,Flow1(Auto),10,Disbursal acc verified,1942,98.58
-UCL,MicroML,Flow1(Auto),6,Child_Lead_Created,1875,
-FULLERTON,Renewal,Flow1(Auto),11,Review submit,1807,93.05
-KSF,Fresh,Flow2(Manual),6,Child_Lead_Created,1740,
-FULLERTON,Renewal,Flow1(Auto),12,Mandate done,1697,93.91
-FULLERTON,Renewal,Flow1(Auto),13,Application submitted by user,1695,99.88
-FULLERTON,Renewal,Flow2(Manual),6,Child_Lead_Created,1687,
-PIRAMAL,Fresh,Flow2(Manual),6,Child_Lead_Created,1643,
-SHRIRAM,Fresh,Flow1(Auto),8,KYC completed,1635,69.93
-FULLERTON,Renewal,Flow2(Manual),7,Selfie uploaded,1594,94.49
-KSF,Fresh,Flow2(Manual),7,Selfie uploaded,1564,89.89
-KSF,Renewal,Flow1(Auto),6,Child_Lead_Created,1504,
-UCL,MicroML,Flow2(Manual),6,Child_Lead_Created,1496,
-PIRAMAL,Fresh,Flow2(Manual),7,Selfie uploaded,1465,89.17
-FULLERTON,Renewal,Flow2(Manual),8,KYC completed,1434,89.96
-UCL,MicroML,Flow1(Auto),7,Selfie uploaded,1375,73.33
-PIRAMAL,Fresh,Flow1(Auto),8,KYC completed,1364,59.02
-SHRIRAM,Fresh,Flow2(Manual),6,Child_Lead_Created,1341,
-SHRIRAM,Fresh,Flow1(Auto),9,BRE2 completed,1335,81.65
-KSF,Fresh,Flow1(Auto),8,KYC completed,1316,59.76
-SHRIRAM,Fresh,Flow1(Auto),10,Disbursal acc verified,1315,98.50
-KSF,Renewal,Flow1(Auto),7,Selfie uploaded,1297,86.24
-NACL,Fresh,Flow1(Auto),6,Child_Lead_Created,1240,
-SHRIRAM,Fresh,Flow2(Manual),7,Selfie uploaded,1236,92.17
-PYFL,Fresh,Flow1(Auto),6,Child_Lead_Created,1143,
-SHRIRAM,Fresh,Flow1(Auto),11,Review submit,1104,83.95
-PYFL,Renewal,Flow1(Auto),6,Child_Lead_Created,1100,
-NACL,Renewal,Flow1(Auto),6,Child_Lead_Created,1063,
-UCL,MicroML,Flow2(Manual),7,Selfie uploaded,1049,70.12
-NACL,Fresh,Flow1(Auto),7,Selfie uploaded,1048,84.52
-SHRIRAM,Fresh,Flow1(Auto),12,Mandate done,1030,93.30
-SHRIRAM,Fresh,Flow1(Auto),13,Application submitted by user,1027,99.71
-KSF,Fresh,Flow2(Manual),8,KYC completed,1007,64.39
-KSF,Renewal,Flow1(Auto),8,KYC completed,987,76.10
-FULLERTON,Renewal,Flow2(Manual),9,BRE2 completed,982,68.48
-NACL,Renewal,Flow1(Auto),7,Selfie uploaded,970,91.25
-PYFL,Renewal,Flow1(Auto),7,Selfie uploaded,969,88.09
-FULLERTON,Renewal,Flow1(Auto),14,Submit to LMS,965,56.93
-FULLERTON,Renewal,Flow2(Manual),10,Disbursal acc verified,965,98.27
-PIRAMAL,Fresh,Flow2(Manual),8,KYC completed,935,63.82
-FULLERTON,Renewal,Flow2(Manual),11,Review submit,918,95.13
-PYFL,Renewal,Flow1(Auto),8,KYC completed,885,91.33
-FULLERTON,Renewal,Flow2(Manual),12,Mandate done,866,94.34
-FULLERTON,Renewal,Flow2(Manual),13,Application submitted by user,865,99.88
-PYFL,Fresh,Flow1(Auto),7,Selfie uploaded,862,75.42
-FULLERTON,Renewal,Flow1(Auto),15,Disbursed,862,89.33
-NACL,Renewal,Flow1(Auto),8,KYC completed,846,87.22
-SHRIRAM,Fresh,Flow2(Manual),8,KYC completed,846,68.45
-PYFL,Fresh,Flow1(Auto),8,KYC completed,808,93.74
-NACL,Fresh,Flow1(Auto),8,KYC completed,786,75.00
-SHRIRAM,Fresh,Flow1(Auto),14,Submit to LMS,785,76.44
-UCL,MicroML,Flow1(Auto),8,KYC completed,751,54.62
-KSF,Fresh,Flow1(Auto),9,BRE2 completed,746,56.69
-MFL,Fresh,Flow1(Auto),6,Child_Lead_Created,746,
-KSF,Fresh,Flow2(Manual),9,BRE2 completed,744,73.88
-PYFL,Fresh,Flow2(Manual),6,Child_Lead_Created,743,
-SHRIRAM,Renewal,Flow1(Auto),6,Child_Lead_Created,741,
-KSF,Fresh,Flow2(Manual),10,Disbursal acc verified,731,98.25
-KSF,Fresh,Flow1(Auto),10,Disbursal acc verified,730,97.86
-SHRIRAM,Fresh,Flow2(Manual),9,BRE2 completed,727,85.93
-NACL,Fresh,Flow2(Manual),6,Child_Lead_Created,724,
-PIRAMAL,Renewal,Flow1(Auto),6,Child_Lead_Created,720,
-SHRIRAM,Fresh,Flow2(Manual),10,Disbursal acc verified,709,97.52
-PIRAMAL,Fresh,Flow1(Auto),9,BRE2 completed,708,51.91
-SHRIRAM,Renewal,Flow1(Auto),7,Selfie uploaded,706,95.28
-PIRAMAL,Fresh,Flow1(Auto),10,Disbursal acc verified,703,99.29
-KSF,Fresh,Flow2(Manual),11,Review submit,691,94.53
-PIRAMAL,Renewal,Flow1(Auto),7,Selfie uploaded,673,93.47
-KSF,Fresh,Flow1(Auto),11,Review submit,672,92.05
-MFL,Fresh,Flow1(Auto),7,Selfie uploaded,664,89.01
-UCL,MicroML,Flow1(Auto),9,BRE2 completed,663,88.28
-KSF,Renewal,Flow2(Manual),6,Child_Lead_Created,642,
-PIRAMAL,Fresh,Flow1(Auto),11,Review submit,641,91.18
-NACL,Fresh,Flow2(Manual),7,Selfie uploaded,632,87.29
-PIRAMAL,Fresh,Flow2(Manual),9,BRE2 completed,628,67.17
-UCL,MicroML,Flow1(Auto),10,Disbursal acc verified,622,93.82
-PIRAMAL,Fresh,Flow2(Manual),10,Disbursal acc verified,617,98.25
-PYFL,Renewal,Flow1(Auto),9,BRE2 completed,608,68.70
-PYFL,Renewal,Flow1(Auto),10,Disbursal acc verified,605,99.51
-PYFL,Fresh,Flow2(Manual),7,Selfie uploaded,604,81.29
-SHRIRAM,Fresh,Flow2(Manual),11,Review submit,600,84.63
-FULLERTON,Renewal,Flow2(Manual),14,Submit to LMS,592,68.44
-SHRIRAM,Fresh,Flow1(Auto),15,Disbursed,583,74.27
-UCL,MicroML,Flow2(Manual),8,KYC completed,580,55.29
-PIRAMAL,Fresh,Flow2(Manual),11,Review submit,578,93.68
-PIRAMAL,Fresh,Flow1(Auto),12,Mandate done,578,90.17
-KSF,Fresh,Flow2(Manual),12,Mandate done,576,83.36
-PIRAMAL,Fresh,Flow1(Auto),13,Application submitted by user,576,99.65
-KSF,Fresh,Flow2(Manual),13,Application submitted by user,574,99.65
-MFL,Renewal,Flow1(Auto),6,Child_Lead_Created,573,
-PYFL,Fresh,Flow2(Manual),8,KYC completed,571,94.54
-KSF,Fresh,Flow1(Auto),12,Mandate done,568,84.52
-KSF,Fresh,Flow1(Auto),13,Application submitted by user,565,99.47
-PYFL,Renewal,Flow1(Auto),11,Review submit,562,92.89
-PYFL,Renewal,Flow1(Auto),13,Application submitted by user,562,109.13
-KSF,Renewal,Flow2(Manual),7,Selfie uploaded,561,87.38
-NACL,Fresh,Flow1(Auto),9,BRE2 completed,552,70.23
-MFL,Renewal,Flow1(Auto),7,Selfie uploaded,552,96.34
-NACL,Renewal,Flow1(Auto),9,BRE2 completed,551,65.13
-SHRIRAM,Fresh,Flow2(Manual),12,Mandate done,551,91.83
-SHRIRAM,Fresh,Flow2(Manual),13,Application submitted by user,547,99.27
-NACL,Renewal,Flow1(Auto),10,Disbursal acc verified,547,99.27
-UCL,MicroML,Flow1(Auto),11,Review submit,537,86.33
-FULLERTON,Renewal,Flow2(Manual),15,Disbursed,536,90.54
-NACL,Fresh,Flow1(Auto),10,Disbursal acc verified,533,96.56
-UCL,MicroML,Flow2(Manual),9,BRE2 completed,526,90.69
-PYFL,Renewal,Flow1(Auto),12,Mandate done,515,91.64
-NACL,Renewal,Flow1(Auto),11,Review submit,513,93.78
-PIRAMAL,Fresh,Flow2(Manual),12,Mandate done,511,88.41
-PIRAMAL,Fresh,Flow2(Manual),13,Application submitted by user,511,100.00
-PYFL,Renewal,Flow2(Manual),6,Child_Lead_Created,501,
-NACL,Renewal,Flow1(Auto),12,Mandate done,495,96.49
-UCL,MicroML,Flow2(Manual),10,Disbursal acc verified,492,93.54
-MFL,Fresh,Flow1(Auto),8,KYC completed,487,73.34
-PIRAMAL,Renewal,Flow1(Auto),8,KYC completed,487,72.36
-NACL,Fresh,Flow1(Auto),11,Review submit,478,89.68
-NACL,Fresh,Flow2(Manual),8,KYC completed,477,75.47
-NACL,Renewal,Flow1(Auto),13,Application submitted by user,472,95.35
-PIRAMAL,Fresh,Flow1(Auto),14,Submit to LMS,460,79.86
-SHRIRAM,Fresh,Flow2(Manual),14,Submit to LMS,460,84.10
-MFL,Renewal,Flow1(Auto),8,KYC completed,452,81.88
-PYFL,Fresh,Flow1(Auto),9,BRE2 completed,449,55.57
-PIRAMAL,Fresh,Flow2(Manual),14,Submit to LMS,446,87.28
-PYFL,Fresh,Flow1(Auto),10,Disbursal acc verified,443,98.66
-NACL,Fresh,Flow1(Auto),12,Mandate done,440,92.05
-KSF,Renewal,Flow1(Auto),9,BRE2 completed,436,44.17
-SHRIRAM,Renewal,Flow1(Auto),8,KYC completed,435,61.61
-UCL,MicroML,Flow1(Auto),12,Mandate done,432,80.45
-NACL,Renewal,Flow2(Manual),6,Child_Lead_Created,429,
-PYFL,Renewal,Flow2(Manual),7,Selfie uploaded,427,85.23
-KSF,Renewal,Flow1(Auto),10,Disbursal acc verified,425,97.48
-NACL,Fresh,Flow1(Auto),13,Application submitted by user,425,96.59
-KSF,Fresh,Flow2(Manual),14,Submit to LMS,415,72.30
-PIRAMAL,Fresh,Flow1(Auto),15,Disbursed,414,90.00
-KSF,Fresh,Flow1(Auto),14,Submit to LMS,413,73.10
-PIRAMAL,Fresh,Flow2(Manual),15,Disbursed,408,91.48
-KSF,Renewal,Flow2(Manual),8,KYC completed,407,72.55
-PYFL,Fresh,Flow1(Auto),11,Review submit,402,90.74
-PYFL,Fresh,Flow1(Auto),13,Application submitted by user,402,120.36
-KSF,Renewal,Flow1(Auto),11,Review submit,399,93.88
-PYFL,Fresh,Flow2(Manual),9,BRE2 completed,397,69.53
-SHRIRAM,Renewal,Flow1(Auto),9,BRE2 completed,394,90.57
-PYFL,Renewal,Flow2(Manual),8,KYC completed,392,91.80
-PYFL,Fresh,Flow2(Manual),10,Disbursal acc verified,390,98.24
-NACL,Renewal,Flow2(Manual),7,Selfie uploaded,389,90.68
-UCL,MicroML,Flow2(Manual),11,Review submit,388,78.86
-SHRIRAM,Renewal,Flow1(Auto),10,Disbursal acc verified,385,97.72
-NACL,Fresh,Flow2(Manual),9,BRE2 completed,379,79.45
-NACL,Fresh,Flow2(Manual),10,Disbursal acc verified,374,98.68
-UCL,MicroML,Flow1(Auto),13,Application submitted by user,371,85.88
-KSF,Renewal,Flow1(Auto),12,Mandate done,370,92.73
-KSF,Fresh,Flow2(Manual),15,Disbursed,365,87.95
-KSF,Renewal,Flow1(Auto),13,Application submitted by user,362,97.84
-PYFL,Fresh,Flow2(Manual),13,Application submitted by user,362,125.26
-PYFL,Fresh,Flow2(Manual),11,Review submit,362,92.82
-UCL,MicroML,Flow1(Auto),14,Submit to LMS,355,95.69
-SHRIRAM,Renewal,Flow1(Auto),11,Review submit,354,91.95
-PYFL,Renewal,Flow1(Auto),14,Submit to LMS,353,62.81
-UCL,MicroML,Flow1(Auto),15,Disbursed,347,97.75
-SHRIRAM,Renewal,Flow1(Auto),12,Mandate done,345,97.46
-SHRIRAM,Renewal,Flow1(Auto),13,Application submitted by user,345,100.00
-NACL,Fresh,Flow2(Manual),11,Review submit,345,92.25
-NACL,Renewal,Flow2(Manual),8,KYC completed,344,88.43
-MFL,Fresh,Flow2(Manual),6,Child_Lead_Created,343,
-SHRIRAM,Fresh,Flow2(Manual),15,Disbursed,342,74.35
-KSF,Fresh,Flow1(Auto),15,Disbursed,342,82.81
-MFL,Fresh,Flow1(Auto),9,BRE2 completed,341,70.02
-PYFL,Renewal,Flow1(Auto),15,Disbursed,340,96.32
-MFL,Fresh,Flow1(Auto),10,Disbursal acc verified,339,99.41
-PYFL,Fresh,Flow1(Auto),12,Mandate done,334,83.08
-NACL,Renewal,Flow1(Auto),14,Submit to LMS,331,70.13
-MFL,Fresh,Flow1(Auto),11,Review submit,327,96.46
-NACL,Fresh,Flow1(Auto),14,Submit to LMS,307,72.24
-NACL,Renewal,Flow1(Auto),15,Disbursed,304,91.84
-MFL,Fresh,Flow1(Auto),12,Mandate done,304,92.97
-NACL,Fresh,Flow2(Manual),12,Mandate done,298,86.38
-KSF,Renewal,Flow1(Auto),14,Submit to LMS,297,82.04
-MFL,Fresh,Flow2(Manual),7,Selfie uploaded,296,86.30
-SHRIRAM,Renewal,Flow2(Manual),6,Child_Lead_Created,292,
-MFL,Renewal,Flow1(Auto),9,BRE2 completed,291,64.38
-MFL,Renewal,Flow1(Auto),10,Disbursal acc verified,290,99.66
-PYFL,Renewal,Flow2(Manual),9,BRE2 completed,290,73.98
-NACL,Fresh,Flow2(Manual),13,Application submitted by user,290,97.32
-PYFL,Fresh,Flow2(Manual),12,Mandate done,289,79.83
-MFL,Fresh,Flow1(Auto),13,Application submitted by user,287,94.41
-UCL,MicroML,Flow2(Manual),12,Mandate done,287,73.97
-NACL,Fresh,Flow1(Auto),15,Disbursed,286,93.16
-MFL,Renewal,Flow1(Auto),11,Review submit,282,97.24
-PYFL,Renewal,Flow2(Manual),10,Disbursal acc verified,280,96.55
-PIRAMAL,Renewal,Flow2(Manual),6,Child_Lead_Created,279,
-SHRIRAM,Renewal,Flow2(Manual),7,Selfie uploaded,272,93.15
-MFL,Renewal,Flow1(Auto),12,Mandate done,264,93.62
-PIRAMAL,Renewal,Flow2(Manual),7,Selfie uploaded,263,94.27
-PYFL,Renewal,Flow2(Manual),11,Review submit,261,93.21
-PYFL,Renewal,Flow2(Manual),13,Application submitted by user,261,108.30
-UCL,MicroML,Flow2(Manual),13,Application submitted by user,259,90.24
-SHRIRAM,Renewal,Flow1(Auto),14,Submit to LMS,255,73.91
-MFL,Renewal,Flow1(Auto),13,Application submitted by user,250,94.70
-KSF,Renewal,Flow1(Auto),15,Disbursed,250,84.18
-NACL,Renewal,Flow2(Manual),9,BRE2 completed,246,71.51
-NACL,Renewal,Flow2(Manual),10,Disbursal acc verified,245,99.59
-MFL,Fresh,Flow1(Auto),14,Submit to LMS,245,85.37
-UCL,MicroML,Flow2(Manual),14,Submit to LMS,242,93.44
-PYFL,Renewal,Flow2(Manual),12,Mandate done,241,92.34
-UCL,MicroML,Flow2(Manual),15,Disbursed,239,98.76
-NACL,Renewal,Flow2(Manual),11,Review submit,227,92.65
-NACL,Fresh,Flow2(Manual),14,Submit to LMS,227,78.28
-PIRAMAL,Renewal,Flow1(Auto),9,BRE2 completed,217,44.56
-NACL,Renewal,Flow2(Manual),12,Mandate done,216,95.15
-PIRAMAL,Renewal,Flow1(Auto),10,Disbursal acc verified,216,99.54
-NACL,Fresh,Flow2(Manual),15,Disbursed,213,93.83
-PIRAMAL,Renewal,Flow1(Auto),11,Review submit,208,96.30
-NACL,Renewal,Flow2(Manual),13,Application submitted by user,206,95.37
-MFL,Fresh,Flow1(Auto),15,Disbursed,203,82.86
-MFL,Fresh,Flow2(Manual),8,KYC completed,203,68.58
-PIRAMAL,Renewal,Flow1(Auto),12,Mandate done,198,95.19
-PIRAMAL,Renewal,Flow1(Auto),13,Application submitted by user,198,100.00
-MFL,Renewal,Flow1(Auto),14,Submit to LMS,194,77.60
-PYFL,Fresh,Flow1(Auto),14,Submit to LMS,193,48.01
-SHRIRAM,Renewal,Flow2(Manual),8,KYC completed,192,70.59
-KSF,Renewal,Flow2(Manual),9,BRE2 completed,190,46.68
-KSF,Renewal,Flow2(Manual),10,Disbursal acc verified,189,99.47
-PIRAMAL,Renewal,Flow2(Manual),8,KYC completed,185,70.34
-PYFL,Renewal,Flow2(Manual),14,Submit to LMS,181,69.35
-SHRIRAM,Renewal,Flow1(Auto),15,Disbursed,176,69.02
-PYFL,Fresh,Flow1(Auto),15,Disbursed,176,91.19
-KSF,Renewal,Flow2(Manual),11,Review submit,174,92.06
-MFL,Renewal,Flow1(Auto),15,Disbursed,173,89.18
-SHRIRAM,Renewal,Flow2(Manual),9,BRE2 completed,173,90.10
-PYFL,Fresh,Flow2(Manual),14,Submit to LMS,173,47.79
-PYFL,Renewal,Flow2(Manual),15,Disbursed,171,94.48
-SHRIRAM,Renewal,Flow2(Manual),10,Disbursal acc verified,171,98.84
-PYFL,Fresh,Flow2(Manual),15,Disbursed,167,96.53
-KSF,Renewal,Flow2(Manual),12,Mandate done,161,92.53
-KSF,Renewal,Flow2(Manual),13,Application submitted by user,160,99.38
-SHRIRAM,Renewal,Flow2(Manual),11,Review submit,158,92.40
-MFL,Renewal,Flow2(Manual),6,Child_Lead_Created,158,
-PIRAMAL,Renewal,Flow1(Auto),14,Submit to LMS,157,79.29
-SHRIRAM,Renewal,Flow2(Manual),12,Mandate done,154,97.47
-SHRIRAM,Renewal,Flow2(Manual),13,Application submitted by user,154,100.00
-MFL,Fresh,Flow2(Manual),9,BRE2 completed,153,75.37
-MFL,Fresh,Flow2(Manual),10,Disbursal acc verified,151,98.69
-MFL,Renewal,Flow2(Manual),7,Selfie uploaded,150,94.94
-NACL,Renewal,Flow2(Manual),14,Submit to LMS,145,70.39
-PIRAMAL,Renewal,Flow1(Auto),15,Disbursed,142,90.45
-NACL,Renewal,Flow2(Manual),15,Disbursed,139,95.86
-MFL,Fresh,Flow2(Manual),11,Review submit,139,92.05
-KSF,Renewal,Flow2(Manual),14,Submit to LMS,134,83.75
-SHRIRAM,Renewal,Flow2(Manual),14,Submit to LMS,123,79.87
-KSF,Renewal,Flow2(Manual),15,Disbursed,119,88.81
-MFL,Fresh,Flow2(Manual),12,Mandate done,117,84.17
-MFL,Renewal,Flow2(Manual),8,KYC completed,115,76.67
-MFL,Fresh,Flow2(Manual),13,Application submitted by user,113,96.58
-MFL,Fresh,Flow2(Manual),14,Submit to LMS,101,89.38
-PIRAMAL,Renewal,Flow2(Manual),9,BRE2 completed,99,53.51
-PIRAMAL,Renewal,Flow2(Manual),10,Disbursal acc verified,99,100.00
-SHRIRAM,Renewal,Flow2(Manual),15,Disbursed,93,75.61
-PIRAMAL,Renewal,Flow2(Manual),11,Review submit,93,93.94
-MFL,Fresh,Flow2(Manual),15,Disbursed,92,91.09
-MFL,Renewal,Flow2(Manual),10,Disbursal acc verified,91,100.00
-MFL,Renewal,Flow2(Manual),9,BRE2 completed,91,79.13
-PIRAMAL,Renewal,Flow2(Manual),12,Mandate done,88,94.62
-PIRAMAL,Renewal,Flow2(Manual),13,Application submitted by user,88,100.00
-MFL,Renewal,Flow2(Manual),11,Review submit,87,95.60
-MFL,Renewal,Flow2(Manual),12,Mandate done,81,93.10
-MFL,Renewal,Flow2(Manual),13,Application submitted by user,77,95.06
-PIRAMAL,Renewal,Flow2(Manual),14,Submit to LMS,75,85.23
-MFL,Renewal,Flow2(Manual),14,Submit to LMS,68,88.31
-PIRAMAL,Renewal,Flow2(Manual),15,Disbursed,65,86.67
-MFL,Renewal,Flow2(Manual),15,Disbursed,60,88.24
+FULLERTON,Fresh,Flow1(Auto),6,Child_Lead_Created,21917,
+FULLERTON,Fresh,Flow1(Auto),7,Selfie uploaded,18024,82.24
+FULLERTON,Fresh,Flow1(Auto),8,KYC completed,14975,83.08
+FULLERTON,Fresh,Flow1(Auto),9,BRE2 completed,11108,74.18
+FULLERTON,Fresh,Flow1(Auto),10,Disbursal acc verified,10984,98.88
+FULLERTON,Fresh,Flow1(Auto),11,Review submit,10119,92.12
+FULLERTON,Fresh,Flow1(Auto),12,Mandate done,9235,91.26
+FULLERTON,Fresh,Flow1(Auto),13,Application submitted by user,9215,99.78
+FULLERTON,Fresh,Flow1(Auto),14,Submit to LMS,7004,76.01
+FULLERTON,Fresh,Flow1(Auto),15,Disbursed,6718,95.92
+FULLERTON,Fresh,Flow2(Manual),6,Child_Lead_Created,14377,
+FULLERTON,Fresh,Flow2(Manual),7,Selfie uploaded,12539,87.22
+FULLERTON,Fresh,Flow2(Manual),8,KYC completed,10540,84.06
+FULLERTON,Fresh,Flow2(Manual),9,BRE2 completed,8858,84.04
+FULLERTON,Fresh,Flow2(Manual),10,Disbursal acc verified,8705,98.27
+FULLERTON,Fresh,Flow2(Manual),11,Review submit,8140,93.51
+FULLERTON,Fresh,Flow2(Manual),12,Mandate done,7229,88.81
+FULLERTON,Fresh,Flow2(Manual),13,Application submitted by user,7216,99.82
+FULLERTON,Fresh,Flow2(Manual),14,Submit to LMS,6268,86.86
+FULLERTON,Fresh,Flow2(Manual),15,Disbursed,6058,96.65
+KSF,Fresh,Flow1(Auto),6,Child_Lead_Created,10729,
+KSF,Fresh,Flow1(Auto),7,Selfie uploaded,9594,89.42
+KSF,Fresh,Flow1(Auto),8,KYC completed,6281,65.47
+KSF,Fresh,Flow1(Auto),9,BRE2 completed,4487,71.44
+KSF,Fresh,Flow1(Auto),10,Disbursal acc verified,4345,96.84
+KSF,Fresh,Flow1(Auto),11,Review submit,4083,93.97
+KSF,Fresh,Flow1(Auto),12,Mandate done,3661,89.66
+KSF,Fresh,Flow1(Auto),13,Application submitted by user,3635,99.29
+KSF,Fresh,Flow1(Auto),14,Submit to LMS,2853,78.49
+KSF,Fresh,Flow1(Auto),15,Disbursed,2728,95.62
+KSF,Fresh,Flow2(Manual),6,Child_Lead_Created,6609,
+KSF,Fresh,Flow2(Manual),7,Selfie uploaded,5985,90.56
+KSF,Fresh,Flow2(Manual),8,KYC completed,4149,69.32
+KSF,Fresh,Flow2(Manual),9,BRE2 completed,3310,79.78
+KSF,Fresh,Flow2(Manual),10,Disbursal acc verified,3189,96.34
+KSF,Fresh,Flow2(Manual),11,Review submit,3048,95.58
+KSF,Fresh,Flow2(Manual),12,Mandate done,2602,85.37
+KSF,Fresh,Flow2(Manual),13,Application submitted by user,2590,99.54
+KSF,Fresh,Flow2(Manual),14,Submit to LMS,2154,83.17
+KSF,Fresh,Flow2(Manual),15,Disbursed,2080,96.56
+MFL,Fresh,Flow1(Auto),6,Child_Lead_Created,2091,
+MFL,Fresh,Flow1(Auto),7,Selfie uploaded,1901,90.91
+MFL,Fresh,Flow1(Auto),8,KYC completed,1471,77.38
+MFL,Fresh,Flow1(Auto),9,BRE2 completed,1004,68.25
+MFL,Fresh,Flow1(Auto),10,Disbursal acc verified,997,99.3
+MFL,Fresh,Flow1(Auto),11,Review submit,969,97.19
+MFL,Fresh,Flow1(Auto),12,Mandate done,881,90.92
+MFL,Fresh,Flow1(Auto),13,Application submitted by user,835,94.78
+MFL,Fresh,Flow1(Auto),14,Submit to LMS,708,84.79
+MFL,Fresh,Flow1(Auto),15,Disbursed,425,60.03
+MFL,Fresh,Flow2(Manual),6,Child_Lead_Created,925,
+MFL,Fresh,Flow2(Manual),7,Selfie uploaded,845,91.35
+MFL,Fresh,Flow2(Manual),8,KYC completed,608,71.95
+MFL,Fresh,Flow2(Manual),9,BRE2 completed,456,75
+MFL,Fresh,Flow2(Manual),10,Disbursal acc verified,450,98.68
+MFL,Fresh,Flow2(Manual),11,Review submit,434,96.44
+MFL,Fresh,Flow2(Manual),12,Mandate done,374,86.18
+MFL,Fresh,Flow2(Manual),13,Application submitted by user,358,95.72
+MFL,Fresh,Flow2(Manual),14,Submit to LMS,325,90.78
+MFL,Fresh,Flow2(Manual),15,Disbursed,222,68.31
+NACL,Fresh,Flow1(Auto),6,Child_Lead_Created,2898,
+NACL,Fresh,Flow1(Auto),7,Selfie uploaded,2437,84.09
+NACL,Fresh,Flow1(Auto),8,KYC completed,1855,76.12
+NACL,Fresh,Flow1(Auto),9,BRE2 completed,1314,70.84
+NACL,Fresh,Flow1(Auto),10,Disbursal acc verified,1280,97.41
+NACL,Fresh,Flow1(Auto),11,Review submit,1167,91.17
+NACL,Fresh,Flow1(Auto),12,Mandate done,1071,91.77
+NACL,Fresh,Flow1(Auto),13,Application submitted by user,1062,99.16
+NACL,Fresh,Flow1(Auto),14,Submit to LMS,771,72.6
+NACL,Fresh,Flow1(Auto),15,Disbursed,733,95.07
+NACL,Fresh,Flow2(Manual),6,Child_Lead_Created,1497,
+NACL,Fresh,Flow2(Manual),7,Selfie uploaded,1326,88.58
+NACL,Fresh,Flow2(Manual),8,KYC completed,1006,75.87
+NACL,Fresh,Flow2(Manual),9,BRE2 completed,801,79.62
+NACL,Fresh,Flow2(Manual),10,Disbursal acc verified,786,98.13
+NACL,Fresh,Flow2(Manual),11,Review submit,729,92.75
+NACL,Fresh,Flow2(Manual),12,Mandate done,646,88.61
+NACL,Fresh,Flow2(Manual),13,Application submitted by user,642,99.38
+NACL,Fresh,Flow2(Manual),14,Submit to LMS,515,80.22
+NACL,Fresh,Flow2(Manual),15,Disbursed,490,95.15
+PIRAMAL,Fresh,Flow1(Auto),6,Child_Lead_Created,21044,
+PIRAMAL,Fresh,Flow1(Auto),7,Selfie uploaded,6550,31.13
+PIRAMAL,Fresh,Flow1(Auto),8,KYC completed,3994,60.98
+PIRAMAL,Fresh,Flow1(Auto),9,BRE2 completed,2118,53.03
+PIRAMAL,Fresh,Flow1(Auto),10,Disbursal acc verified,2098,99.06
+PIRAMAL,Fresh,Flow1(Auto),11,Review submit,1960,93.42
+PIRAMAL,Fresh,Flow1(Auto),12,Mandate done,1807,92.19
+PIRAMAL,Fresh,Flow1(Auto),13,Application submitted by user,1805,99.89
+PIRAMAL,Fresh,Flow1(Auto),14,Submit to LMS,1496,82.88
+PIRAMAL,Fresh,Flow1(Auto),15,Disbursed,1432,95.72
+PIRAMAL,Fresh,Flow2(Manual),6,Child_Lead_Created,7478,
+PIRAMAL,Fresh,Flow2(Manual),7,Selfie uploaded,3540,47.34
+PIRAMAL,Fresh,Flow2(Manual),8,KYC completed,2207,62.34
+PIRAMAL,Fresh,Flow2(Manual),9,BRE2 completed,1465,66.38
+PIRAMAL,Fresh,Flow2(Manual),10,Disbursal acc verified,1446,98.7
+PIRAMAL,Fresh,Flow2(Manual),11,Review submit,1361,94.12
+PIRAMAL,Fresh,Flow2(Manual),12,Mandate done,1229,90.3
+PIRAMAL,Fresh,Flow2(Manual),13,Application submitted by user,1228,99.92
+PIRAMAL,Fresh,Flow2(Manual),14,Submit to LMS,1104,89.9
+PIRAMAL,Fresh,Flow2(Manual),15,Disbursed,1071,97.01
+PYFL,Fresh,Flow1(Auto),6,Child_Lead_Created,4697,
+PYFL,Fresh,Flow1(Auto),7,Selfie uploaded,3640,77.5
+PYFL,Fresh,Flow1(Auto),8,KYC completed,3469,95.3
+PYFL,Fresh,Flow1(Auto),9,BRE2 completed,1863,53.7
+PYFL,Fresh,Flow1(Auto),10,Disbursal acc verified,1838,98.66
+PYFL,Fresh,Flow1(Auto),11,Review submit,1695,92.22
+PYFL,Fresh,Flow1(Auto),12,Mandate done,1495,88.2
+PYFL,Fresh,Flow1(Auto),13,Application submitted by user,1695,113.38
+PYFL,Fresh,Flow1(Auto),14,Submit to LMS,1150,67.85
+PYFL,Fresh,Flow1(Auto),15,Disbursed,1102,95.83
+PYFL,Fresh,Flow2(Manual),6,Child_Lead_Created,3058,
+PYFL,Fresh,Flow2(Manual),7,Selfie uploaded,2587,84.6
+PYFL,Fresh,Flow2(Manual),8,KYC completed,2495,96.44
+PYFL,Fresh,Flow2(Manual),9,BRE2 completed,1634,65.49
+PYFL,Fresh,Flow2(Manual),10,Disbursal acc verified,1613,98.71
+PYFL,Fresh,Flow2(Manual),11,Review submit,1533,95.04
+PYFL,Fresh,Flow2(Manual),12,Mandate done,1308,85.32
+PYFL,Fresh,Flow2(Manual),13,Application submitted by user,1533,117.2
+PYFL,Fresh,Flow2(Manual),14,Submit to LMS,1077,70.25
+PYFL,Fresh,Flow2(Manual),15,Disbursed,1037,96.29
+SHRIRAM,Fresh,Flow1(Auto),6,Child_Lead_Created,6822,
+SHRIRAM,Fresh,Flow1(Auto),7,Selfie uploaded,6189,90.72
+SHRIRAM,Fresh,Flow1(Auto),8,KYC completed,4294,69.38
+SHRIRAM,Fresh,Flow1(Auto),9,BRE2 completed,3444,80.2
+SHRIRAM,Fresh,Flow1(Auto),10,Disbursal acc verified,3409,98.98
+SHRIRAM,Fresh,Flow1(Auto),11,Review submit,3071,90.09
+SHRIRAM,Fresh,Flow1(Auto),12,Mandate done,2900,94.43
+SHRIRAM,Fresh,Flow1(Auto),13,Application submitted by user,2897,99.9
+SHRIRAM,Fresh,Flow1(Auto),14,Submit to LMS,2383,82.26
+SHRIRAM,Fresh,Flow1(Auto),15,Disbursed,2038,85.52
+SHRIRAM,Fresh,Flow2(Manual),6,Child_Lead_Created,3041,
+SHRIRAM,Fresh,Flow2(Manual),7,Selfie uploaded,2799,92.04
+SHRIRAM,Fresh,Flow2(Manual),8,KYC completed,1903,67.99
+SHRIRAM,Fresh,Flow2(Manual),9,BRE2 completed,1614,84.81
+SHRIRAM,Fresh,Flow2(Manual),10,Disbursal acc verified,1579,97.83
+SHRIRAM,Fresh,Flow2(Manual),11,Review submit,1426,90.31
+SHRIRAM,Fresh,Flow2(Manual),12,Mandate done,1303,91.37
+SHRIRAM,Fresh,Flow2(Manual),13,Application submitted by user,1299,99.69
+SHRIRAM,Fresh,Flow2(Manual),14,Submit to LMS,1140,87.76
+SHRIRAM,Fresh,Flow2(Manual),15,Disbursed,993,87.11

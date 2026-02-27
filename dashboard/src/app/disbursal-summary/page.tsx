@@ -25,6 +25,19 @@ import {
   generateMonthlyTrends,
   MonthlyTrend,
   getUniqueValues,
+  fetchDisbursementSummaryOverall,
+  fetchDisbursalMTDLender,
+  fetchDisbursalLMSDLender,
+  fetchDisbursalFTDLender,
+  fetchDisbursalMTDLeadType,
+  fetchDisbursalLMSDLeadType,
+  fetchDisbursalFTDLeadType,
+  DisbursementSummaryOverallRow,
+  DisbursalBreakdownLenderRow,
+  DisbursalBreakdownLeadTypeRow,
+  DAYS_ELAPSED,
+  DAYS_IN_MONTH,
+  REFERENCE_DATE,
 } from "@/lib/data";
 import { cn } from "@/lib/utils";
 import {
@@ -57,13 +70,16 @@ import {
   Area,
 } from "recharts";
 
-const AVG_ATS = 2.5;
-const LMTD_FACTOR = 0.85;
-const LENDER_AOP: Record<string, number> = {
-  FULLERTON: 120, KSF: 80, PIRAMAL: 60, SHRIRAM: 55,
-  NACL: 45, PYFL: 40, MFL: 35, UCL: 30,
+/** Avg ticket size (Lakh): MTD 1528 Cr / 83401 loans ≈ 1.83 L */
+const AVG_ATS = 1.83;
+/** Used only when LMSD data is not available (avoid for amount – LMSD can be higher than MTD) */
+const LMTD_FACTOR = 0.94;
+// Fallback AOP (Feb'26 month target, Cr) when Disbursement_Summary_Overall.csv not loaded
+const LENDER_AOP_FALLBACK: Record<string, number> = {
+  SMFG: 1375, PIRAMAL: 140, NACL: 130, MFL: 130, PAYU: 115,
+  KSF: 100, SRIRAM: 100, TCL: 15, PROFECTUS: 0, UCL: 0,
 };
-const TOTAL_AOP = Object.values(LENDER_AOP).reduce((s, v) => s + v, 0); // 465 Cr
+const TOTAL_AOP_FALLBACK = Object.values(LENDER_AOP_FALLBACK).reduce((s, v) => s + v, 0); // 2105
 const COLORS = [
   "hsl(220, 70%, 55%)", "hsl(262, 60%, 55%)", "hsl(30, 80%, 55%)",
   "hsl(150, 60%, 45%)", "hsl(350, 65%, 55%)", "hsl(190, 70%, 45%)",
@@ -75,8 +91,7 @@ const PRODUCT_COLORS: Record<string, string> = {
   MicroML: "hsl(30, 80%, 55%)",
 };
 
-const DAYS_ELAPSED = 9;
-const TOTAL_DAYS = 28;
+const TOTAL_DAYS = DAYS_IN_MONTH; // Feb 2026 (DAYS_ELAPSED = 23 as of 24-Feb-26)
 
 export default function DisbursalSummary() {
   const { global, useGlobalFilters } = useFilters();
@@ -86,6 +101,18 @@ export default function DisbursalSummary() {
   const [loading, setLoading] = useState(true);
   const [kpiDive, setKpiDive] = useState<{ open: boolean; config: KpiDeepDiveConfig | null }>({ open: false, config: null });
 
+  // Disbursement views: Overall, Lender-wise, Flow-wise (FTD & LMTD & MTD)
+  const [summaryOverall, setSummaryOverall] = useState<DisbursementSummaryOverallRow[]>([]);
+  const [mtdLender, setMtdLender] = useState<DisbursalBreakdownLenderRow[]>([]);
+  const [lmsdLender, setLmsdLender] = useState<DisbursalBreakdownLenderRow[]>([]);
+  const [ftdLender, setFtdLender] = useState<DisbursalBreakdownLenderRow[]>([]);
+  const [mtdLeadType, setMtdLeadType] = useState<DisbursalBreakdownLeadTypeRow[]>([]);
+  const [lmsdLeadType, setLmsdLeadType] = useState<DisbursalBreakdownLeadTypeRow[]>([]);
+  const [ftdLeadType, setFtdLeadType] = useState<DisbursalBreakdownLeadTypeRow[]>([]);
+
+  const [disbViewTab, setDisbViewTab] = useState<"lender" | "flow">("lender");
+  const [disbPeriodTab, setDisbPeriodTab] = useState<"MTD" | "LMTD" | "FTD">("MTD");
+
   useEffect(() => {
     async function load() {
       const data = await fetchDisbursalSummary();
@@ -94,6 +121,32 @@ export default function DisbursalSummary() {
       setLoading(false);
     }
     load();
+  }, []);
+
+  useEffect(() => {
+    async function loadViews() {
+      try {
+        const [overall, mtdL, lmsdL, ftdL, mtdT, lmsdT, ftdT] = await Promise.all([
+          fetchDisbursementSummaryOverall(),
+          fetchDisbursalMTDLender(),
+          fetchDisbursalLMSDLender(),
+          fetchDisbursalFTDLender(),
+          fetchDisbursalMTDLeadType(),
+          fetchDisbursalLMSDLeadType(),
+          fetchDisbursalFTDLeadType(),
+        ]);
+        setSummaryOverall(overall);
+        setMtdLender(mtdL);
+        setLmsdLender(lmsdL);
+        setFtdLender(ftdL);
+        setMtdLeadType(mtdT);
+        setLmsdLeadType(lmsdT);
+        setFtdLeadType(ftdT);
+      } catch {
+        // CSVs may be missing in dev
+      }
+    }
+    loadViews();
   }, []);
 
   // Scroll to section if hash is present in URL
@@ -116,44 +169,109 @@ export default function DisbursalSummary() {
     });
   }, [rawData, global, useGlobalFilters]);
 
-  // ─── Top-level Aggregates ──────────────────────────────────────────
-  const totalDisbursed = data.reduce((s, r) => s + r.disbursed, 0);
-  const totalChildLeads = data.reduce((s, r) => s + r.child_leads, 0);
-  const amountCr = (totalDisbursed * AVG_ATS) / 100;
-  const lmtdDisbursed = Math.round(totalDisbursed * LMTD_FACTOR);
-  const lmtdAmountCr = amountCr * LMTD_FACTOR;
+  // ─── Primary source: new disbursement numbers (MTD/LMSD/Overall) when available ───
+  const useNewDisbNumbers = mtdLender.length > 0 && lmsdLender.length > 0;
+  const totalAop = useMemo(() => (summaryOverall.length > 0 ? summaryOverall.reduce((s, r) => s + r.aop, 0) : TOTAL_AOP_FALLBACK), [summaryOverall]);
+  const lenderAopMap = useMemo(() => {
+    if (summaryOverall.length > 0) {
+      const m: Record<string, number> = {};
+      summaryOverall.forEach((r) => { m[r.lender] = r.aop; });
+      return m;
+    }
+    return LENDER_AOP_FALLBACK;
+  }, [summaryOverall]);
+
+  // ─── Top-level Aggregates (from new CSVs when available, else from Lender_Level_Disb_Summary) ───
+  const totalDisbursed = useMemo(() => {
+    if (useNewDisbNumbers) return mtdLender.reduce((s, r) => s + r.loan, 0);
+    return data.reduce((s, r) => s + r.disbursed, 0);
+  }, [useNewDisbNumbers, mtdLender, data]);
+  const totalChildLeads = useMemo(() => data.reduce((s, r) => s + r.child_leads, 0), [data]);
+  const amountCr = useMemo(() => {
+    if (useNewDisbNumbers) return mtdLender.reduce((s, r) => s + r.amt_cr, 0);
+    const hasAmtCr = data.some((r) => r.amt_cr != null && r.amt_cr > 0);
+    if (hasAmtCr) return data.reduce((s, r) => s + (r.amt_cr ?? 0), 0);
+    return (data.reduce((s, r) => s + r.disbursed, 0) * AVG_ATS) / 100;
+  }, [useNewDisbNumbers, mtdLender, data]);
+  const lmtdDisbursed = useMemo(() => {
+    if (useNewDisbNumbers) return lmsdLender.reduce((s, r) => s + r.loan, 0);
+    const hasLmsd = data.some((r) => r.lmtd_disbursed != null && r.lmtd_disbursed > 0);
+    if (hasLmsd) return data.reduce((s, r) => s + (r.lmtd_disbursed ?? 0), 0);
+    return Math.round(data.reduce((s, r) => s + r.disbursed, 0) * LMTD_FACTOR);
+  }, [useNewDisbNumbers, lmsdLender, data]);
+  const lmtdAmountCr = useMemo(() => {
+    if (useNewDisbNumbers) return lmsdLender.reduce((s, r) => s + r.amt_cr, 0);
+    const hasLmsdAmt = data.some((r) => r.lmtd_amt_cr != null && r.lmtd_amt_cr >= 0);
+    if (hasLmsdAmt) return data.reduce((s, r) => s + (r.lmtd_amt_cr ?? 0), 0);
+    const hasAmtCr = data.some((r) => r.amt_cr != null && r.amt_cr > 0);
+    if (hasAmtCr) return data.reduce((s, r) => s + (r.amt_cr ?? 0), 0) * LMTD_FACTOR;
+    return (data.reduce((s, r) => s + r.disbursed, 0) * AVG_ATS * LMTD_FACTOR) / 100;
+  }, [useNewDisbNumbers, lmsdLender, data]);
   const disbGrowth = lmtdDisbursed > 0 ? ((totalDisbursed - lmtdDisbursed) / lmtdDisbursed) * 100 : 0;
   const amtGrowth = lmtdAmountCr > 0 ? ((amountCr - lmtdAmountCr) / lmtdAmountCr) * 100 : 0;
   const convPct = totalChildLeads > 0 ? (totalDisbursed / totalChildLeads) * 100 : 0;
-  const lmtdConv = totalChildLeads > 0 ? (lmtdDisbursed / Math.round(totalChildLeads * LMTD_FACTOR)) * 100 : 0;
+  const lmtdConv = totalChildLeads > 0 && lmtdDisbursed > 0 ? (lmtdDisbursed / Math.round(totalChildLeads * (totalDisbursed > 0 ? lmtdDisbursed / totalDisbursed : LMTD_FACTOR))) * 100 : 0;
   const convDelta = convPct - lmtdConv;
 
   const runRateCr = (amountCr / DAYS_ELAPSED) * TOTAL_DAYS;
-  const monthlyAopTarget = TOTAL_AOP / 12;
+  const monthlyAopTarget = totalAop; // AOP = Feb'26 month target (Cr)
   const runRatePacingPct = monthlyAopTarget > 0 ? (runRateCr / monthlyAopTarget) * 100 : 0;
 
-  // ─── By-Lender ─────────────────────────────────────────────────────
+  // ─── By-Lender (from new MTD/LMSD/Overall when available, else from data) ───
   const byLender = useMemo(() => {
-    const map: Record<string, { disbursed: number; child: number; lmtd_disb: number }> = {};
+    if (useNewDisbNumbers) {
+      const lmsdByLender: Record<string, { loan: number; amt_cr: number }> = {};
+      lmsdLender.forEach((r) => {
+        lmsdByLender[r.lender] = { loan: r.loan, amt_cr: r.amt_cr };
+      });
+      const aopByLender = lenderAopMap;
+      return mtdLender.map((r) => {
+        const lmsd = lmsdByLender[r.lender] || { loan: 0, amt_cr: 0 };
+        const growth = lmsd.amt_cr > 0 ? ((r.amt_cr - lmsd.amt_cr) / lmsd.amt_cr) * 100 : 0;
+        return {
+          lender: r.lender,
+          disbursed: r.loan,
+          amount_cr: r.amt_cr,
+          lmtd_disb: lmsd.loan,
+          lmtd_amount_cr: lmsd.amt_cr,
+          child: 0,
+          conv: 0,
+          aop: aopByLender[r.lender] ?? 0,
+          growth,
+          share: amountCr > 0 ? (r.amt_cr / amountCr) * 100 : 0,
+        };
+      }).sort((a, b) => b.disbursed - a.disbursed);
+    }
+    const map: Record<string, { disbursed: number; child: number; lmtd_disb: number; amt_cr: number; lmtd_amt_cr: number }> = {};
     data.forEach((r) => {
-      if (!map[r.lender]) map[r.lender] = { disbursed: 0, child: 0, lmtd_disb: 0 };
+      if (!map[r.lender]) map[r.lender] = { disbursed: 0, child: 0, lmtd_disb: 0, amt_cr: 0, lmtd_amt_cr: 0 };
       map[r.lender].disbursed += r.disbursed;
       map[r.lender].child += r.child_leads;
-      map[r.lender].lmtd_disb += Math.round(r.disbursed * LMTD_FACTOR);
+      map[r.lender].lmtd_disb += r.lmtd_disbursed ?? Math.round(r.disbursed * LMTD_FACTOR);
+      map[r.lender].amt_cr += r.amt_cr ?? (r.disbursed * AVG_ATS) / 100;
+      map[r.lender].lmtd_amt_cr += (r.lmtd_amt_cr != null && r.lmtd_amt_cr >= 0) ? r.lmtd_amt_cr : ((r.lmtd_disbursed ?? 0) * AVG_ATS) / 100;
     });
-    return Object.entries(map).map(([lender, v]) => ({
-      lender,
-      disbursed: v.disbursed,
-      amount_cr: (v.disbursed * AVG_ATS) / 100,
-      lmtd_disb: v.lmtd_disb,
-      lmtd_amount_cr: (v.lmtd_disb * AVG_ATS) / 100,
-      child: v.child,
-      conv: v.child > 0 ? (v.disbursed / v.child) * 100 : 0,
-      aop: LENDER_AOP[lender] || 0,
-      growth: v.lmtd_disb > 0 ? ((v.disbursed - v.lmtd_disb) / v.lmtd_disb) * 100 : 0,
-      share: totalDisbursed > 0 ? (v.disbursed / totalDisbursed) * 100 : 0,
-    })).sort((a, b) => b.disbursed - a.disbursed);
-  }, [data, totalDisbursed]);
+    const tot = data.reduce((s, r) => s + r.disbursed, 0);
+    const totalAmt = data.some((r) => r.amt_cr != null) ? data.reduce((s, r) => s + (r.amt_cr ?? 0), 0) : 0;
+    const hasLmsdAmt = data.some((r) => r.lmtd_amt_cr != null && r.lmtd_amt_cr >= 0);
+    return Object.entries(map).map(([lender, v]) => {
+      const mtdAmt = totalAmt > 0 ? v.amt_cr : (v.disbursed * AVG_ATS) / 100;
+      const ltdAmt = hasLmsdAmt ? v.lmtd_amt_cr : (v.lmtd_disb * AVG_ATS) / 100;
+      const growth = ltdAmt > 0 ? ((mtdAmt - ltdAmt) / ltdAmt) * 100 : 0;
+      return {
+        lender,
+        disbursed: v.disbursed,
+        amount_cr: mtdAmt,
+        lmtd_disb: v.lmtd_disb,
+        lmtd_amount_cr: ltdAmt,
+        child: v.child,
+        conv: v.child > 0 ? (v.disbursed / v.child) * 100 : 0,
+        aop: lenderAopMap[lender] ?? 0,
+        growth,
+        share: amountCr > 0 ? (mtdAmt / amountCr) * 100 : (tot > 0 ? (v.disbursed / tot) * 100 : 0),
+      };
+    }).sort((a, b) => b.disbursed - a.disbursed);
+  }, [useNewDisbNumbers, mtdLender, lmsdLender, lenderAopMap, amountCr, data]);
 
   // ─── SECTION 1: Lender × Program Matrix ────────────────────────────
   const allProducts = useMemo(() => getUniqueValues(data, "product_type"), [data]);
@@ -293,7 +411,7 @@ export default function DisbursalSummary() {
   const runRateData = useMemo(() => {
     // Daily disbursals with expected run-rate line
     const avgPerDay = totalDisbursed / DAYS_ELAPSED;
-    const expectedPerDay = (TOTAL_AOP * 100) / (AVG_ATS * 12 * TOTAL_DAYS); // loans per day for AOP
+    const expectedPerDay = (totalAop * 100) / (AVG_ATS * TOTAL_DAYS); // loans per day to hit Feb'26 AOP (Cr)
 
     const days = [];
     for (let d = 1; d <= DAYS_ELAPSED; d++) {
@@ -329,7 +447,7 @@ export default function DisbursalSummary() {
     const lenderPacing = byLender
       .filter((l) => l.aop > 0)
       .map((l) => {
-        const monthlyTarget = l.aop / 12;
+        const monthlyTarget = l.aop; // AOP = Feb'26 month target (Cr)
         const currentPace = (l.amount_cr / DAYS_ELAPSED) * TOTAL_DAYS;
         const pacingPct = monthlyTarget > 0 ? (currentPace / monthlyTarget) * 100 : 0;
         const daysToTarget = l.amount_cr > 0 ? Math.ceil((monthlyTarget * DAYS_ELAPSED) / l.amount_cr) : 999;
@@ -348,7 +466,7 @@ export default function DisbursalSummary() {
 
     return { days, lenderPacing, expectedPerDay, avgPerDay };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [totalDisbursed, byLender]);
+  }, [totalDisbursed, byLender, totalAop]);
 
   // ─── Rich Insights ─────────────────────────────────────────────────
   const richInsights = useMemo((): RichInsightItem[] => {
@@ -384,7 +502,7 @@ export default function DisbursalSummary() {
       const gap = monthlyAopTarget - runRateCr;
       items.push({ id: nextId(), icon: Target, color: "text-red-600", title: `AOP Run-Rate Behind: ${runRatePacingPct.toFixed(0)}%`, detail: `₹${runRateCr.toFixed(1)} Cr/month run-rate vs ₹${monthlyAopTarget.toFixed(1)} Cr target. Gap: ~₹${gap.toFixed(1)} Cr.`, severity: "bad", impactWeight: 80, link: "/disbursal-summary", section: "disb-kpi", expanded: { bullets: [`Run-rate: ₹${runRateCr.toFixed(1)} Cr/month | Target: ₹${monthlyAopTarget.toFixed(1)} Cr`, `Pacing: ${runRatePacingPct.toFixed(0)}% — ₹${gap.toFixed(1)} Cr shortfall projected`, ...runRateData.lenderPacing.filter((l) => l.status === "behind").map((l) => `${l.lender}: ${l.pacing_pct.toFixed(0)}% pacing`)], chartData: runRateData.lenderPacing.filter((l) => l.status === "behind").map((l) => ({ label: l.lender, value: l.pacing_pct, color: l.pacing_pct < 50 ? "hsl(350, 65%, 55%)" : "hsl(30, 80%, 55%)", filterContext: { lender: l.lender } })), chartLabel: "Behind-AOP Lenders (% pacing)", chartValueSuffix: "%" } });
     } else {
-      items.push({ id: nextId(), icon: Target, color: runRatePacingPct >= 100 ? "text-emerald-600" : "text-blue-600", title: `AOP Pacing: ${runRatePacingPct.toFixed(0)}%`, detail: `₹${runRateCr.toFixed(1)} Cr/month run-rate vs ₹${monthlyAopTarget.toFixed(1)} Cr target.`, severity: runRatePacingPct >= 100 ? "good" : "info", impactWeight: 25, link: "/disbursal-summary", section: "disb-kpi", expanded: { bullets: [`Run-rate: ₹${runRateCr.toFixed(1)} Cr/month`, `${runRatePacingPct >= 100 ? "On track" : "Slightly behind"} for monthly AOP`], chartData: [], chartLabel: "", chartValueSuffix: "" } });
+      items.push({ id: nextId(), icon: Target, color: runRatePacingPct >= 100 ? "text-emerald-600" : "text-blue-600", title: `AOP Pacing: ${runRatePacingPct.toFixed(0)}%`, detail: `₹${runRateCr.toFixed(1)} Cr/month run-rate vs ₹${monthlyAopTarget.toFixed(1)} Cr target.`, severity: runRatePacingPct >= 100 ? "good" : "info", impactWeight: 25, link: "/disbursal-summary", section: "disb-kpi", expanded: { bullets: [`Run-rate: ₹${runRateCr.toFixed(1)} Cr/month`, `${runRatePacingPct >= 100 ? "On track" : "Slightly behind"} for Feb'26 AOP`], chartData: [], chartLabel: "", chartValueSuffix: "" } });
     }
 
     // 6. Critically behind lenders
@@ -457,7 +575,7 @@ export default function DisbursalSummary() {
     <div>
       <PageHeader
         title="Disbursal Summary"
-        description={`Where disbursements come from (${pL} vs ${cL}), who is performing, and whether we are on track.`}
+        description={`Where disbursements come from (${pL} vs ${cL}), who is performing, and whether we are on track. Day ${DAYS_ELAPSED}/${TOTAL_DAYS} (as of ${REFERENCE_DATE.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "2-digit" })}).`}
       />
 
       <div className="p-6 space-y-6">
@@ -594,7 +712,7 @@ export default function DisbursalSummary() {
                       type: "kpi-row",
                       kpis: [
                         { label: "Projected (EOM)", value: `${runRateCr.toFixed(1)} Cr`, sub: "at current pace" },
-                        { label: "Monthly AOP Target", value: `${monthlyAopTarget.toFixed(1)} Cr`, sub: "target" },
+                        { label: "Feb'26 AOP Target", value: `${monthlyAopTarget.toFixed(1)} Cr`, sub: "target" },
                         { label: "Pacing", value: `${runRatePacingPct.toFixed(0)}%`, sub: "vs target", color: runRatePacingPct >= 100 ? "text-emerald-600" : runRatePacingPct >= 75 ? "text-amber-600" : "text-red-600" },
                       ],
                     },
@@ -622,8 +740,8 @@ export default function DisbursalSummary() {
                       type: "bullets",
                       bullets: [
                         `Run-rate: ₹${runRateCr.toFixed(1)} Cr/month (${DAYS_ELAPSED}/${TOTAL_DAYS} days elapsed)`,
-                        `Pacing at ${runRatePacingPct.toFixed(0)}% of monthly AOP target (₹${monthlyAopTarget.toFixed(1)} Cr)`,
-                        runRatePacingPct >= 100 ? "On track for monthly target." : `Gap: ~₹${(monthlyAopTarget - runRateCr).toFixed(1)} Cr shortfall projected.`,
+                        `Pacing at ${runRatePacingPct.toFixed(0)}% of Feb'26 AOP (₹${monthlyAopTarget.toFixed(1)} Cr)`,
+                        runRatePacingPct >= 100 ? "On track for Feb'26 AOP." : `Gap: ~₹${(monthlyAopTarget - runRateCr).toFixed(1)} Cr shortfall projected.`,
                       ],
                     },
                   ],
@@ -636,7 +754,7 @@ export default function DisbursalSummary() {
               value={`${runRateCr.toFixed(1)} Cr`}
               subtitle={`${DAYS_ELAPSED}/${TOTAL_DAYS} days`}
               delta={runRatePacingPct - 100}
-              deltaLabel="vs AOP pace"
+              deltaLabel="vs Feb'26 AOP"
               icon={<Gauge className="h-5 w-5 text-blue-600" />}
             />
           </ClickableKpiCard>
@@ -818,6 +936,312 @@ export default function DisbursalSummary() {
               icon={<BarChart3 className="h-5 w-5 text-pink-600" />}
             />
           </ClickableKpiCard>
+        </div>
+
+        {/* ═══ Disbursement Views: Overall, Lender-wise, Flow-wise (FTD & LMTD & MTD) ═════ */}
+        <div id="disbursement-views" className="space-y-4">
+          <div>
+            <h2 className="text-sm font-semibold flex items-center gap-2">
+              <Banknote className="h-4 w-4 text-muted-foreground" />
+              Disbursement Views
+            </h2>
+            <p className="text-[10px] text-muted-foreground mt-0.5">
+              Overall summary, lender-wise and flow-wise (lead type) : FTD, LMTD & MTD
+            </p>
+          </div>
+
+          {/* Overall: Disbursement Summary */}
+          <Card>
+            <CardHeader className="py-3 px-5 bg-primary/10">
+              <CardTitle className="text-xs font-semibold">Disbursement Summary (Overall)</CardTitle>
+              <p className="text-[10px] text-muted-foreground">Lender | AOP (Feb&apos;26 target, Cr) | MTD | LMSD | Growth%</p>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto max-h-[320px] overflow-y-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-muted/50">
+                      <TableHead className="text-[10px] font-semibold">Lender</TableHead>
+                      <TableHead className="text-[10px] font-semibold text-right">AOP (Target) (Cr)</TableHead>
+                      <TableHead className="text-[10px] font-semibold text-right">MTD (Cr)</TableHead>
+                      <TableHead className="text-[10px] font-semibold text-right">LMSD (Cr)</TableHead>
+                      <TableHead className="text-[10px] font-semibold text-right">Growth%</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {summaryOverall.map((r) => {
+                      const growth = r.lmsd_cr > 0 ? ((r.mtd_cr - r.lmsd_cr) / r.lmsd_cr) * 100 : 0;
+                      return (
+                        <TableRow key={r.lender} className="hover:bg-muted/20">
+                          <TableCell className="text-xs font-medium py-2">{r.lender}</TableCell>
+                          <TableCell className="text-xs text-right tabular-nums">{r.aop.toLocaleString("en-IN")}</TableCell>
+                          <TableCell className="text-xs text-right tabular-nums">{r.mtd_cr.toFixed(2)}</TableCell>
+                          <TableCell className="text-xs text-right tabular-nums">{r.lmsd_cr.toFixed(2)}</TableCell>
+                          <TableCell className="text-right py-2">
+                            <span className={cn(
+                              "text-[10px] font-semibold",
+                              growth > 0 ? "text-emerald-600" : growth < 0 ? "text-red-600" : "text-muted-foreground"
+                            )}>
+                              {growth > 0 ? "+" : ""}{growth.toFixed(2)}%
+                            </span>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                    {summaryOverall.length > 0 && (
+                      <TableRow className="bg-muted/40 font-bold border-t-2">
+                        <TableCell className="text-xs font-bold py-2">Summary</TableCell>
+                        <TableCell className="text-xs text-right tabular-nums">
+                          {summaryOverall.reduce((s, r) => s + r.aop, 0).toLocaleString("en-IN")}
+                        </TableCell>
+                        <TableCell className="text-xs text-right tabular-nums">
+                          {summaryOverall.reduce((s, r) => s + r.mtd_cr, 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </TableCell>
+                        <TableCell className="text-xs text-right tabular-nums">
+                          {summaryOverall.reduce((s, r) => s + r.lmsd_cr, 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </TableCell>
+                        <TableCell className="text-right py-2">
+                          {(() => {
+                            const tMtd = summaryOverall.reduce((s, r) => s + r.mtd_cr, 0);
+                            const tLmsd = summaryOverall.reduce((s, r) => s + r.lmsd_cr, 0);
+                            const g = tLmsd > 0 ? ((tMtd - tLmsd) / tLmsd) * 100 : 0;
+                            return (
+                              <span className={cn(
+                                "text-[10px] font-bold",
+                                g > 0 ? "text-emerald-600" : g < 0 ? "text-red-600" : "text-muted-foreground"
+                              )}>
+                                {g > 0 ? "+" : ""}{g.toFixed(2)}%
+                              </span>
+                            );
+                          })()}
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Lender-wise / Flow-wise tabs */}
+          <div className="flex flex-wrap gap-2">
+            <div className="flex rounded-lg border border-border overflow-hidden">
+              {(["lender", "flow"] as const).map((tab) => (
+                <button
+                  key={tab}
+                  className={cn(
+                    "px-3 py-1.5 text-[11px] font-semibold transition-colors",
+                    disbViewTab === tab ? "bg-primary text-primary-foreground" : "bg-muted/30 text-muted-foreground hover:bg-muted/60"
+                  )}
+                  onClick={() => setDisbViewTab(tab)}
+                >
+                  {tab === "lender" ? "Lender-wise" : "Flow-wise"}
+                </button>
+              ))}
+            </div>
+            <div className="flex rounded-lg border border-border overflow-hidden">
+              {(["MTD", "LMTD", "FTD"] as const).map((period) => (
+                <button
+                  key={period}
+                  className={cn(
+                    "px-3 py-1.5 text-[11px] font-semibold transition-colors",
+                    disbPeriodTab === period ? "bg-primary text-primary-foreground" : "bg-muted/30 text-muted-foreground hover:bg-muted/60"
+                  )}
+                  onClick={() => setDisbPeriodTab(period)}
+                >
+                  {period}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Lender-wise table */}
+          {disbViewTab === "lender" && (
+            <Card>
+              <CardHeader className="py-3 px-5 bg-primary/10">
+                <CardTitle className="text-xs font-semibold">
+                  {disbPeriodTab} DISBURSAL (Lender)
+                </CardTitle>
+                <p className="text-[10px] text-muted-foreground">Loan | Amt(Cr.) | ATS | Avg | Avg PF</p>
+              </CardHeader>
+              <CardContent className="p-0">
+                <div className="overflow-x-auto max-h-[320px] overflow-y-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted/50">
+                        <TableHead className="text-[10px] font-semibold">Lender</TableHead>
+                        <TableHead className="text-[10px] font-semibold text-right">Loan</TableHead>
+                        <TableHead className="text-[10px] font-semibold text-right">Amt(Cr.)</TableHead>
+                        <TableHead className="text-[10px] font-semibold text-right">ATS</TableHead>
+                        <TableHead className="text-[10px] font-semibold text-right">Avg</TableHead>
+                        <TableHead className="text-[10px] font-semibold text-right">Avg PF</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {(disbPeriodTab === "MTD" ? mtdLender : disbPeriodTab === "LMTD" ? lmsdLender : ftdLender).map((r) => (
+                        <TableRow key={r.lender} className="hover:bg-muted/20">
+                          <TableCell className="text-xs font-medium py-2">{r.lender}</TableCell>
+                          <TableCell className="text-xs text-right tabular-nums">{r.loan.toLocaleString("en-IN")}</TableCell>
+                          <TableCell className="text-xs text-right tabular-nums">{r.amt_cr.toFixed(2)}</TableCell>
+                          <TableCell className="text-xs text-right tabular-nums">{r.ats.toLocaleString("en-IN")}</TableCell>
+                          <TableCell className="text-xs text-right tabular-nums">{r.avg.toFixed(2)}</TableCell>
+                          <TableCell className="text-xs text-right tabular-nums">{r.avg_pf.toFixed(2)}</TableCell>
+                        </TableRow>
+                      ))}
+                      {disbPeriodTab === "MTD" && mtdLender.length > 0 && (
+                        <TableRow className="bg-muted/40 font-bold border-t-2">
+                          <TableCell className="text-xs font-bold py-2">Summary</TableCell>
+                          <TableCell className="text-xs text-right tabular-nums">{mtdLender.reduce((s, r) => s + r.loan, 0).toLocaleString("en-IN")}</TableCell>
+                          <TableCell className="text-xs text-right tabular-nums">{mtdLender.reduce((s, r) => s + r.amt_cr, 0).toFixed(2)}</TableCell>
+                          <TableCell className="text-xs text-right tabular-nums">
+                            {mtdLender.reduce((s, r) => s + r.loan, 0) > 0
+                              ? Math.round(mtdLender.reduce((s, r) => s + r.ats * r.loan, 0) / mtdLender.reduce((s, r) => s + r.loan, 0)).toLocaleString("en-IN")
+                              : "-"}
+                          </TableCell>
+                          <TableCell className="text-xs text-right tabular-nums">
+                            {mtdLender.length ? (mtdLender.reduce((s, r) => s + r.avg, 0) / mtdLender.length).toFixed(2) : "-"}
+                          </TableCell>
+                          <TableCell className="text-xs text-right tabular-nums">
+                            {mtdLender.length ? (mtdLender.reduce((s, r) => s + r.avg_pf, 0) / mtdLender.length).toFixed(2) : "-"}
+                          </TableCell>
+                        </TableRow>
+                      )}
+                      {disbPeriodTab === "LMTD" && lmsdLender.length > 0 && (
+                        <TableRow className="bg-muted/40 font-bold border-t-2">
+                          <TableCell className="text-xs font-bold py-2">Summary</TableCell>
+                          <TableCell className="text-xs text-right tabular-nums">{lmsdLender.reduce((s, r) => s + r.loan, 0).toLocaleString("en-IN")}</TableCell>
+                          <TableCell className="text-xs text-right tabular-nums">{lmsdLender.reduce((s, r) => s + r.amt_cr, 0).toFixed(2)}</TableCell>
+                          <TableCell className="text-xs text-right tabular-nums">
+                            {lmsdLender.reduce((s, r) => s + r.loan, 0) > 0
+                              ? Math.round(lmsdLender.reduce((s, r) => s + r.ats * r.loan, 0) / lmsdLender.reduce((s, r) => s + r.loan, 0)).toLocaleString("en-IN")
+                              : "-"}
+                          </TableCell>
+                          <TableCell className="text-xs text-right tabular-nums">
+                            {lmsdLender.length ? (lmsdLender.reduce((s, r) => s + r.avg, 0) / lmsdLender.length).toFixed(2) : "-"}
+                          </TableCell>
+                          <TableCell className="text-xs text-right tabular-nums">
+                            {lmsdLender.length ? (lmsdLender.reduce((s, r) => s + r.avg_pf, 0) / lmsdLender.length).toFixed(2) : "-"}
+                          </TableCell>
+                        </TableRow>
+                      )}
+                      {disbPeriodTab === "FTD" && ftdLender.length > 0 && (
+                        <TableRow className="bg-muted/40 font-bold border-t-2">
+                          <TableCell className="text-xs font-bold py-2">Summary</TableCell>
+                          <TableCell className="text-xs text-right tabular-nums">{ftdLender.reduce((s, r) => s + r.loan, 0).toLocaleString("en-IN")}</TableCell>
+                          <TableCell className="text-xs text-right tabular-nums">{ftdLender.reduce((s, r) => s + r.amt_cr, 0).toFixed(2)}</TableCell>
+                          <TableCell className="text-xs text-right tabular-nums">
+                            {ftdLender.reduce((s, r) => s + r.loan, 0) > 0
+                              ? Math.round(ftdLender.reduce((s, r) => s + r.ats * r.loan, 0) / ftdLender.reduce((s, r) => s + r.loan, 0)).toLocaleString("en-IN")
+                              : "-"}
+                          </TableCell>
+                          <TableCell className="text-xs text-right tabular-nums">
+                            {ftdLender.length ? (ftdLender.reduce((s, r) => s + r.avg, 0) / ftdLender.length).toFixed(2) : "-"}
+                          </TableCell>
+                          <TableCell className="text-xs text-right tabular-nums">
+                            {ftdLender.length ? (ftdLender.reduce((s, r) => s + r.avg_pf, 0) / ftdLender.length).toFixed(2) : "-"}
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Flow-wise (lead type) table */}
+          {disbViewTab === "flow" && (
+            <Card>
+              <CardHeader className="py-3 px-5 bg-primary/10">
+                <CardTitle className="text-xs font-semibold">
+                  {disbPeriodTab} DISBURSAL (Lead Type)
+                </CardTitle>
+                <p className="text-[10px] text-muted-foreground">Loan | Amt(Cr.) | ATS | Avg | Avg PF</p>
+              </CardHeader>
+              <CardContent className="p-0">
+                <div className="overflow-x-auto max-h-[320px] overflow-y-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted/50">
+                        <TableHead className="text-[10px] font-semibold">Lead Type</TableHead>
+                        <TableHead className="text-[10px] font-semibold text-right">Loan</TableHead>
+                        <TableHead className="text-[10px] font-semibold text-right">Amt(Cr.)</TableHead>
+                        <TableHead className="text-[10px] font-semibold text-right">ATS</TableHead>
+                        <TableHead className="text-[10px] font-semibold text-right">Avg</TableHead>
+                        <TableHead className="text-[10px] font-semibold text-right">Avg PF</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {(disbPeriodTab === "MTD" ? mtdLeadType : disbPeriodTab === "LMTD" ? lmsdLeadType : ftdLeadType).map((r) => (
+                        <TableRow key={r.lead_type} className="hover:bg-muted/20">
+                          <TableCell className="text-xs font-medium py-2">{r.lead_type}</TableCell>
+                          <TableCell className="text-xs text-right tabular-nums">{r.loan.toLocaleString("en-IN")}</TableCell>
+                          <TableCell className="text-xs text-right tabular-nums">{r.amt_cr.toFixed(2)}</TableCell>
+                          <TableCell className="text-xs text-right tabular-nums">{r.ats.toLocaleString("en-IN")}</TableCell>
+                          <TableCell className="text-xs text-right tabular-nums">{r.avg.toFixed(2)}</TableCell>
+                          <TableCell className="text-xs text-right tabular-nums">{r.avg_pf.toFixed(2)}</TableCell>
+                        </TableRow>
+                      ))}
+                      {disbPeriodTab === "MTD" && mtdLeadType.length > 0 && (
+                        <TableRow className="bg-muted/40 font-bold border-t-2">
+                          <TableCell className="text-xs font-bold py-2">Summary</TableCell>
+                          <TableCell className="text-xs text-right tabular-nums">{mtdLeadType.reduce((s, r) => s + r.loan, 0).toLocaleString("en-IN")}</TableCell>
+                          <TableCell className="text-xs text-right tabular-nums">{mtdLeadType.reduce((s, r) => s + r.amt_cr, 0).toFixed(2)}</TableCell>
+                          <TableCell className="text-xs text-right tabular-nums">
+                            {mtdLeadType.reduce((s, r) => s + r.loan, 0) > 0
+                              ? Math.round(mtdLeadType.reduce((s, r) => s + r.ats * r.loan, 0) / mtdLeadType.reduce((s, r) => s + r.loan, 0)).toLocaleString("en-IN")
+                              : "-"}
+                          </TableCell>
+                          <TableCell className="text-xs text-right tabular-nums">
+                            {mtdLeadType.length ? (mtdLeadType.reduce((s, r) => s + r.avg, 0) / mtdLeadType.length).toFixed(2) : "-"}
+                          </TableCell>
+                          <TableCell className="text-xs text-right tabular-nums">
+                            {mtdLeadType.length ? (mtdLeadType.reduce((s, r) => s + r.avg_pf, 0) / mtdLeadType.length).toFixed(2) : "-"}
+                          </TableCell>
+                        </TableRow>
+                      )}
+                      {disbPeriodTab === "LMTD" && lmsdLeadType.length > 0 && (
+                        <TableRow className="bg-muted/40 font-bold border-t-2">
+                          <TableCell className="text-xs font-bold py-2">Summary</TableCell>
+                          <TableCell className="text-xs text-right tabular-nums">{lmsdLeadType.reduce((s, r) => s + r.loan, 0).toLocaleString("en-IN")}</TableCell>
+                          <TableCell className="text-xs text-right tabular-nums">{lmsdLeadType.reduce((s, r) => s + r.amt_cr, 0).toFixed(2)}</TableCell>
+                          <TableCell className="text-xs text-right tabular-nums">
+                            {lmsdLeadType.reduce((s, r) => s + r.loan, 0) > 0
+                              ? Math.round(lmsdLeadType.reduce((s, r) => s + r.ats * r.loan, 0) / lmsdLeadType.reduce((s, r) => s + r.loan, 0)).toLocaleString("en-IN")
+                              : "-"}
+                          </TableCell>
+                          <TableCell className="text-xs text-right tabular-nums">
+                            {lmsdLeadType.length ? (lmsdLeadType.reduce((s, r) => s + r.avg, 0) / lmsdLeadType.length).toFixed(2) : "-"}
+                          </TableCell>
+                          <TableCell className="text-xs text-right tabular-nums">
+                            {lmsdLeadType.length ? (lmsdLeadType.reduce((s, r) => s + r.avg_pf, 0) / lmsdLeadType.length).toFixed(2) : "-"}
+                          </TableCell>
+                        </TableRow>
+                      )}
+                      {disbPeriodTab === "FTD" && ftdLeadType.length > 0 && (
+                        <TableRow className="bg-muted/40 font-bold border-t-2">
+                          <TableCell className="text-xs font-bold py-2">Summary</TableCell>
+                          <TableCell className="text-xs text-right tabular-nums">{ftdLeadType.reduce((s, r) => s + r.loan, 0).toLocaleString("en-IN")}</TableCell>
+                          <TableCell className="text-xs text-right tabular-nums">{ftdLeadType.reduce((s, r) => s + r.amt_cr, 0).toFixed(2)}</TableCell>
+                          <TableCell className="text-xs text-right tabular-nums">
+                            {ftdLeadType.reduce((s, r) => s + r.loan, 0) > 0
+                              ? Math.round(ftdLeadType.reduce((s, r) => s + r.ats * r.loan, 0) / ftdLeadType.reduce((s, r) => s + r.loan, 0)).toLocaleString("en-IN")
+                              : "-"}
+                          </TableCell>
+                          <TableCell className="text-xs text-right tabular-nums">
+                            {ftdLeadType.length ? (ftdLeadType.reduce((s, r) => s + r.avg, 0) / ftdLeadType.length).toFixed(2) : "-"}
+                          </TableCell>
+                          <TableCell className="text-xs text-right tabular-nums">
+                            {ftdLeadType.length ? (ftdLeadType.reduce((s, r) => s + r.avg_pf, 0) / ftdLeadType.length).toFixed(2) : "-"}
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </div>
 
         {/* Insights */}
@@ -1246,7 +1670,7 @@ export default function DisbursalSummary() {
             </Card>
             <Card>
               <CardContent className="p-3">
-                <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">Monthly AOP Target</p>
+                <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">Feb'26 AOP Target</p>
                 <p className="text-lg font-bold tabular-nums">{monthlyAopTarget.toFixed(1)} Cr</p>
                 <div className="flex items-center gap-1 mt-1">
                   <Progress value={Math.min(runRatePacingPct, 100)} className="h-1.5 flex-1" />

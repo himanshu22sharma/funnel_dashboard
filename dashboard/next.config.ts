@@ -1,10 +1,13 @@
 import type { NextConfig } from "next";
 
 const isProd = process.env.NODE_ENV === "production";
-const basePath = isProd ? "/Lending_Dashboard_v1" : "";
+const isPreview = process.env.PREVIEW === "1";
+// Preview = static build with no base path so you can open at http://localhost:3000/
+const basePath = isPreview ? "" : isProd ? "/Lending_Dashboard_v1" : "";
 
 const nextConfig: NextConfig = {
-  output: "export",
+  // Static export for production or preview
+  ...(isProd || isPreview ? { output: "export" as const } : {}),
   basePath,
   images: { unoptimized: true },
   env: {

@@ -67,7 +67,7 @@ import { KpiDeepDiveModal, KpiDeepDiveConfig } from "@/components/dashboard/kpi-
 // ─── Constants ──────────────────────────────────────────────────────────────
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const useRouterHook = require("next/navigation").useRouter;
-const AVG_ATS = 2.5; // Lakhs
+const AVG_ATS = 1.83; // Lakhs (MTD 1528 Cr / 83401 loans)
 const LENDER_AOP: Record<string, number> = {
   FULLERTON: 120, KSF: 80, PIRAMAL: 60, SHRIRAM: 55,
   NACL: 45, PYFL: 40, MFL: 35, UCL: 30,

@@ -1,0 +1,231 @@
+major_index,major_stage,sub_stage,FULLERTON Fresh Flow1(Auto) Leads,FULLERTON Fresh Flow2(Manual) Leads,KSF Fresh Flow1(Auto) Leads,KSF Fresh Flow2(Manual) Leads,MFL Fresh Flow1(Auto) Leads,MFL Fresh Flow2(Manual) Leads,NACL Fresh Flow1(Auto) Leads,NACL Fresh Flow2(Manual) Leads,PIRAMAL Fresh Flow1(Auto) Leads,PIRAMAL Fresh Flow2(Manual) Leads,PYFL Fresh Flow1(Auto) Leads,PYFL Fresh Flow2(Manual) Leads,SHRIRAM Fresh Flow1(Auto) Leads,SHRIRAM Fresh Flow2(Manual) Leads
+1,Total leads,CHECK_LRE_RANKING,,,10.0,5.0,,,,,,,1.0,,,
+1,Total leads,LEAD_CLOSURE_INITIATED,,,,,,,,1.0,,,,,,
+1,Total leads,LEAD_FAILURE,6041.0,3103.0,,,433.0,181.0,836.0,382.0,3949.0,1826.0,,,2213.0,984.0
+1,Total leads,LEAD_RESET,,,2869.0,1484.0,,,,,,,1525.0,760.0,,
+1,Total leads,LEAD_RESET_IN_PROCESS,,,,,,,,1.0,,,,,1.0,
+1,Total leads,LOM_OFFER_RANKING_REQUEST_FAILURE,,,,,1.0,,,,,,,,,
+1,Total leads,LRE_PARENT,,,189.0,100.0,,,,,,,92.0,58.0,,
+1,Total leads,Subtotal,6041.0,3103.0,3068.0,1589.0,434.0,181.0,836.0,384.0,3949.0,1826.0,1618.0,818.0,2214.0,984.0
+1,Subtotal,,6041.0,3103.0,3068.0,1589.0,434.0,181.0,836.0,384.0,3949.0,1826.0,1618.0,818.0,2214.0,984.0
+2,Workable leads,PAN_DEDUPE_FAILED,3.0,,,,1.0,,1.0,,1.0,,,,1.0,
+2,Workable leads,Subtotal,3.0,0.0,0.0,0.0,1.0,0.0,1.0,0.0,1.0,0.0,0.0,0.0,1.0,0.0
+2,Subtotal,,3.0,0.0,0.0,0.0,1.0,0.0,1.0,0.0,1.0,0.0,0.0,0.0,1.0,0.0
+4,BRE1 completed,KYC_SELFIE_REQUIRED,,,,,,,,,,1.0,,,,
+4,BRE1 completed,LENDER_CREATE_APPLICATION_REJECTED,,,,,,,,,,,,,91.0,22.0
+4,BRE1 completed,LIS_CREATE_APPLICATION_REQUEST_FAILURE,,,,,,,,,12.0,1.0,,,,
+4,BRE1 completed,Subtotal,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,12.0,2.0,0.0,0.0,91.0,22.0
+4,Subtotal,,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,12.0,2.0,0.0,0.0,91.0,22.0
+6,Child_Lead_Created,AWAIT_SELFIE,,,1476.0,699.0,,,,,,,867.0,378.0,,
+6,Child_Lead_Created,BANK_NAME_MATCH,,,18.0,3.0,,,,,,,,,,
+6,Child_Lead_Created,BANK_NAME_MATCH_FAILED,,,52.0,29.0,,,,,,,,,,
+6,Child_Lead_Created,EMAIL_VERIFICATION_REQUIRED_V2,5.0,,,,,,,,,,,,,
+6,Child_Lead_Created,FETCH_SETTLEMENT_ACCOUNT,,,1.0,5.0,,,,,,,,,,
+6,Child_Lead_Created,KYC_IN_PROGRESS,3778.0,1796.0,,,,,,,,,,,,
+6,Child_Lead_Created,KYC_SELFIE_REQUIRED,,,,,187.0,78.0,454.0,168.0,869.0,366.0,,,625.0,240.0
+6,Child_Lead_Created,LENDER_CREATE_APPLICATION_FAILURE,,,,,,,5.0,4.0,,,,,,
+6,Child_Lead_Created,LENDER_CREATE_APPLICATION_SUCCESS,,,,,,,,,,,,,411.0,241.0
+6,Child_Lead_Created,LIS_CREATE_APPLICATION_SUCCESS,,,,,,,,,456.0,232.0,,,,
+6,Child_Lead_Created,ML_CHILD_LEAD_CREATED,,,4.0,3.0,,,,,4.0,,,,,
+6,Child_Lead_Created,PENNY_DROP_FAILED,,,2.0,1.0,,,,,,,,,,
+6,Child_Lead_Created,PIN_CODE_NOT_SERVICIBLE,,,,,,,,,,,2.0,2.0,,
+6,Child_Lead_Created,SELFIE_UPLOADING,,,2.0,,,,,,,,,,,
+6,Child_Lead_Created,SOLE_PROP_CHECK_FAILED,,,1.0,,,,,,,,,,,
+6,Child_Lead_Created,Subtotal,3783.0,1796.0,1556.0,740.0,187.0,78.0,459.0,172.0,1329.0,598.0,869.0,380.0,1036.0,481.0
+6,Subtotal,,3783.0,1796.0,1556.0,740.0,187.0,78.0,459.0,172.0,1329.0,598.0,869.0,380.0,1036.0,481.0
+7,Selfie uploaded,AWAIT_LENDER_APP_CREATE,,,5.0,3.0,,,,,,,12.0,8.0,,
+7,Selfie uploaded,AWAIT_LENDER_APP_DROP,,,,,,,,,,,4.0,1.0,,
+7,Selfie uploaded,DEDUPE_FAILURE,,,,,3.0,1.0,,,,,,,,
+7,Selfie uploaded,INITIATE_KYC,,,,,28.0,13.0,35.0,15.0,,,,,,
+7,Selfie uploaded,INITIATE_MULTIMODE_KYC,,,1214.0,823.0,,,,,,,339.0,237.0,,
+7,Selfie uploaded,KYC_FAILED,792.0,548.0,,,177.0,110.0,162.0,97.0,8.0,1.0,,,116.0,43.0
+7,Selfie uploaded,KYC_FAILED_DIGILOCKER,,,,1.0,,,,,,,,,,
+7,Selfie uploaded,KYC_INITIATED,1.0,,,,,,,1.0,4.0,3.0,,,9.0,4.0
+7,Selfie uploaded,KYC_INITIATED_DIGILOCKER,,,3.0,2.0,,,,,,,8.0,4.0,,
+7,Selfie uploaded,KYC_INITIATED_OFFLINE_AADHAAR,,,,,,,,,,,,2.0,,
+7,Selfie uploaded,KYC_INITIATED_SEARCH_BY_PAN,,,,,,,,,,,3.0,,,
+7,Selfie uploaded,KYC_REJECTED,,,65.0,33.0,,,,,,,6.0,2.0,,
+7,Selfie uploaded,KYC_SELFIE_REUPLOAD_REQUIRED,96.0,78.0,,,11.0,4.0,5.0,4.0,15.0,11.0,,,7.0,7.0
+7,Selfie uploaded,KYC_SELFIE_UPLOADED,251.0,154.0,,,6.0,1.0,27.0,15.0,,,,,,
+7,Selfie uploaded,LENDER_APP_CREATE_FAILED,,,,,,,,,,,4.0,1.0,,
+7,Selfie uploaded,LENDER_APP_CREATE_SUCCESS,,,1.0,2.0,,,,,,,2.0,,,
+7,Selfie uploaded,LENDER_PAN_DEDUP_FAILED,,,15.0,1.0,,,,,,,,,,
+7,Selfie uploaded,SELFIE_RE_UPLOAD,,,17.0,16.0,,,,,,,15.0,12.0,,
+7,Selfie uploaded,Subtotal,1140.0,780.0,1320.0,881.0,225.0,129.0,229.0,132.0,27.0,15.0,393.0,267.0,132.0,54.0
+7,Subtotal,,1140.0,780.0,1320.0,881.0,225.0,129.0,229.0,132.0,27.0,15.0,393.0,267.0,132.0,54.0
+8,KYC completed,BRE2_FAILURE,219.0,61.0,,,255.0,87.0,92.0,32.0,13.0,8.0,,,149.0,29.0
+8,KYC completed,BRE2_LOAN_OFFER_UPDATED,,,,,,,,,,,,,44.0,14.0
+8,KYC completed,BRE2_REQUESTED,1.0,2.0,,,,,,,,,,,,
+8,KYC completed,FETCH_LENDER_OFFER,,,,,,,,,,,5.0,5.0,,
+8,KYC completed,KYC_PINCODE_NOT_SERVICEABLE,,,104.0,39.0,,,,,,,,,,
+8,KYC completed,LAS_KYC_AUDIT_FAILURE,,,,,,,,,1.0,,,,,
+8,KYC completed,LENDER_BRE_INIT,,,,,,,,,,,1.0,1.0,,
+8,KYC completed,LENDER_BRE_INITIATED,,,10.0,3.0,,,,,,,,,,
+8,KYC completed,LENDER_BRE_REJECTED,,,406.0,219.0,,,,,,,64.0,22.0,,
+8,KYC completed,LENDER_BRE_RETRY,,,,,,,,,,,6.0,9.0,,
+8,KYC completed,LENDER_GMV_UPLOAD_INIT,,,7.0,4.0,,,,,,,,,,
+8,KYC completed,SERVICEABILITY_CHECK,,,5.0,1.0,,,,,,,,,,
+8,KYC completed,SERVICEABILITY_REJECTED,53.0,24.0,,,,,,,,,,,,
+8,KYC completed,Subtotal,273.0,87.0,532.0,266.0,255.0,87.0,92.0,32.0,14.0,8.0,76.0,37.0,193.0,43.0
+8,Subtotal,,273.0,87.0,532.0,266.0,255.0,87.0,92.0,32.0,14.0,8.0,76.0,37.0,193.0,43.0
+9,BRE2 completed,ADD_BANK,,,,,,,,,,,27.0,21.0,,
+9,BRE2 completed,BANK_VALIDATION_FAILURE2,7.0,13.0,,,,,3.0,2.0,4.0,1.0,,,51.0,9.0
+9,BRE2 completed,BANK_VALIDATION_PENDING,80.0,107.0,,,3.0,3.0,25.0,9.0,15.0,14.0,,,21.0,19.0
+9,BRE2 completed,BANK_VERIFICATION_FAILURE,31.0,33.0,,,2.0,2.0,5.0,2.0,5.0,3.0,,,4.0,6.0
+9,BRE2 completed,FETCH_SETTLEMENT_ACCOUNT,,,,,,,,,,,1.0,2.0,,
+9,BRE2 completed,FETCH_SETTLEMENT_BANK_ACCOUNT,3.0,3.0,,,,1.0,1.0,,,,,,,2.0
+9,BRE2 completed,LENDER_KYC_VALIDATE_INIT,,,5.0,3.0,,,,,,,,,,
+9,BRE2 completed,LENDER_KYC_VALIDATION_REJECTED,,,36.0,24.0,,,,,,,,,,
+9,BRE2 completed,MAQUETTE_FRAUD_CHECK_FAILURE,90.0,53.0,,,5.0,2.0,12.0,4.0,19.0,15.0,,,31.0,12.0
+9,BRE2 completed,PENNY_DROP_COMPLETED,,,,,,,,,,,,1.0,,
+9,BRE2 completed,Subtotal,211.0,209.0,41.0,27.0,10.0,8.0,46.0,17.0,43.0,33.0,28.0,24.0,107.0,48.0
+9,Subtotal,,211.0,209.0,41.0,27.0,10.0,8.0,46.0,17.0,43.0,33.0,28.0,24.0,107.0,48.0
+10,Disbursal acc verified,AWAIT_OFFER_ACCEPT,,,255.0,139.0,,,,,,,131.0,74.0,,
+10,Disbursal acc verified,BANKING_ACTION_DONE,696.0,446.0,,,,,,,,,,,100.0,52.0
+10,Disbursal acc verified,KYB_FETCH_MPA_FAILURE,,,,,,,,,3.0,,,,,
+10,Disbursal acc verified,KYB_FETCH_MPA_SUCCESS,,,,,,,,,101.0,68.0,,,,
+10,Disbursal acc verified,KYB_SAVE_BUSINESS_DETAILS_FAILURE,,,,,,,,,1.0,,,,,
+10,Disbursal acc verified,LENDER_BANK_SHARING_INITIATED,,,,,,,,,,,,1.0,,
+10,Disbursal acc verified,LENDER_KYC_CONFIRMATION_IN_PROGRESS,,,,,,,,,,,1.0,,,
+10,Disbursal acc verified,LOAN_AGREEMENT_PENDING,,,,,,,86.0,45.0,,,,,,
+10,Disbursal acc verified,SECURED_OFFER_DISPLAYED,,,,,24.0,16.0,,,,,,,,
+10,Disbursal acc verified,Subtotal,696.0,446.0,255.0,139.0,24.0,16.0,86.0,45.0,105.0,68.0,132.0,75.0,100.0,52.0
+10,Subtotal,,696.0,446.0,255.0,139.0,24.0,16.0,86.0,45.0,105.0,68.0,132.0,75.0,100.0,52.0
+11,Review submit,EMANDATE_REQUIRED,834.0,863.0,413.0,441.0,10.0,7.0,110.0,89.0,147.0,129.0,192.0,217.0,162.0,119.0
+11,Review submit,EMANDATE_REQUIRED_V2,,,,,73.0,51.0,,,,,,,,
+11,Review submit,Subtotal,834.0,863.0,413.0,441.0,83.0,58.0,110.0,89.0,147.0,129.0,192.0,217.0,162.0,119.0
+11,Subtotal,,834.0,863.0,413.0,441.0,83.0,58.0,110.0,89.0,147.0,129.0,192.0,217.0,162.0,119.0
+12,Mandate done,BANK_QC_DOC_UPLOAD_REQUIRED,12.0,10.0,,,2.0,,2.0,1.0,2.0,1.0,,,3.0,1.0
+12,Mandate done,BUSINESS_PROOF_DOCUMENT_REQUIRED,,,,,,,1.0,1.0,,,,,,
+12,Mandate done,GST_VERIFICATION_REQUEST_FAILURE,1.0,,,,,,,,,,,,,
+12,Mandate done,INITIATE_DISBURSAL_ACCOUNT_NAME_MATCH_QC_DOC_UPLOAD,,,,,,,,,,,2.0,4.0,,
+12,Mandate done,INITIATE_SETTLEMENT_ACCOUNT_NAME_MATCH_QC_DOC_UPLOAD,,,,,,,,,,,9.0,4.0,,
+12,Mandate done,KYB_FETCH_MPA_SUCCESS,,,,,,1.0,,,,,,,,
+12,Mandate done,LENDER_BANK_DETAILS_SHARING_INITIATED,,,7.0,2.0,,,,,,,,1.0,,
+12,Mandate done,LENDER_DOC_UPLOAD_IN_PROGRESS_LOAN_AGREEMENT,,,1.0,,,,,,,,,,,
+12,Mandate done,LENDER_MANDATE_DETAILS_SHARING_INITIATED,,,,,,,,,,,4.0,2.0,,
+12,Mandate done,LENDER_PENNY_DROP_COMPLETED,,,1.0,,,,,,,,,,,
+12,Mandate done,LENDER_UPDATE_APPLICATION_INITIATED,,,,,1.0,,,,,,,3.0,,
+12,Mandate done,LOAN_AGREEMENT_PENDING,,,,,7.0,4.0,,,,,,,,
+12,Mandate done,LOAN_QC_REJECTED,,,,,23.0,5.0,,,,,,,,
+12,Mandate done,MOB_TO_UDYAM_FETCH_FAILURE_V2,80.0,44.0,,,,,,,,,,,,
+12,Mandate done,PAN_QC_DOC_UPLOAD_REQUIRED,2.0,,,,,,,,,,,,,1.0
+12,Mandate done,QC_ACTION_PENDING,,,,,7.0,2.0,,,,,,,,
+12,Mandate done,SETTLEMENT_BANK_QC_DOC_REQUIRED,,,,,,,,,,,,,,2.0
+12,Mandate done,UC_LENDER_FORM_SUBMISSION_REQUIRED,,,,,1.0,2.0,,,,,,,,
+12,Mandate done,UC_REQUIRED,,,,,,,6.0,5.0,,,,,,
+12,Mandate done,Subtotal,95.0,54.0,9.0,2.0,41.0,14.0,9.0,7.0,2.0,1.0,15.0,14.0,3.0,4.0
+12,Subtotal,,95.0,54.0,9.0,2.0,41.0,14.0,9.0,7.0,2.0,1.0,15.0,14.0,3.0,4.0
+13,Application submitted by user,ACCEPT_OFFER_INIT,,,,,,,,,,,4.0,6.0,,
+13,Application submitted by user,AUDITOR_APPROVED,,,1.0,1.0,,,,,,,,,,
+13,Application submitted by user,AUDITOR_REJECTED,,,4.0,,,,,,,,,,,
+13,Application submitted by user,AWAIT_MULTI_SIGN_DOCS,,,1.0,1.0,,,,,,,4.0,1.0,,
+13,Application submitted by user,BANK_QC_DOC_RE_UPLOAD_REQUIRED,16.0,13.0,,,,1.0,1.0,1.0,9.0,5.0,,,1.0,4.0
+13,Application submitted by user,BUSINESS_APPROVAL_AWAITED,225.0,77.0,,,37.0,8.0,39.0,14.0,58.0,16.0,,,103.0,23.0
+13,Application submitted by user,DIY_FI_DOC_UPLOADED,196.0,48.0,7.0,8.0,20.0,5.0,11.0,1.0,31.0,8.0,18.0,23.0,55.0,10.0
+13,Application submitted by user,DIY_FI_REQUIRED,13.0,4.0,4.0,3.0,3.0,,1.0,,2.0,1.0,4.0,3.0,5.0,
+13,Application submitted by user,FETCH_DOC_INIT,,,,2.0,,,,,,,,,,
+13,Application submitted by user,FI_AWAITED,,,278.0,137.0,,,,,,,74.0,39.0,,
+13,Application submitted by user,FI_ON_HOLD,,,260.0,130.0,,,,,,,93.0,55.0,,
+13,Application submitted by user,FI_REJECTED,,,53.0,30.0,,,,,,,8.0,9.0,,
+13,Application submitted by user,INITIATE_SETTLEMENT_ACCOUNT_NAME_MATCH_QC_DOC_REUPLOAD,,,,,,,,,,,1.0,2.0,,
+13,Application submitted by user,KYC_EXPIRED,,,,1.0,,,,,,,,,,
+13,Application submitted by user,LENDER_AUDIT_TRAIL_UPLOAD_INIT,,,3.0,2.0,,,,,,,,,,
+13,Application submitted by user,LENDER_DOCUMENT_UPLOAD_FAILURE,,,,,1.0,1.0,1.0,,,,,,,
+13,Application submitted by user,LENDER_DOCUMENT_UPLOAD_INITIATED,,,,,,,,1.0,,,,,,
+13,Application submitted by user,LENDER_DOC_UPLOAD_IN_PROGRESS_APPLICATION_FORM,,,,,,,,,,,2.0,1.0,,
+13,Application submitted by user,LENDER_DOC_UPLOAD_IN_PROGRESS_KFS_LETTER,,,,,,,,,,,1.0,1.0,,
+13,Application submitted by user,LENDER_DOC_UPLOAD_IN_PROGRESS_LOAN_AGREEMENT,,,,,,,,,,,1.0,1.0,,
+13,Application submitted by user,LENDER_DOC_UPLOAD_IN_PROGRESS_SANCTION_LETTER,,,,,,,,,,,2.0,4.0,,
+13,Application submitted by user,LENDER_GMV_UPLOAD_INIT,,,,,,,,,,,7.0,3.0,,
+13,Application submitted by user,LENDER_MVR_SHARING_INIT_FAILURE,,,,,,,30.0,20.0,,,,,,
+13,Application submitted by user,LENDER_OFFER_EXPIRED,,,,,,,12.0,7.0,,,,,,
+13,Application submitted by user,LIS_DATA_UPDATE_FAILED,116.0,32.0,,,,,,,,,,,,
+13,Application submitted by user,LIS_DATA_UPDATE_REQUEST_SUCCESS,36.0,24.0,,,,,,,,,,,,
+13,Application submitted by user,LMS_SUBMIT_APPLICATION_FAILED,5.0,2.0,,,,,,,,,,,,
+13,Application submitted by user,LOAN_APPLICATION_ON_HOLD,451.0,182.0,,,37.0,11.0,36.0,9.0,61.0,35.0,,,115.0,23.0
+13,Application submitted by user,LOAN_APPLICATION_REJECTED,448.0,170.0,,,23.0,3.0,24.0,7.0,50.0,16.0,,,97.0,31.0
+13,Application submitted by user,LOAN_QC_REJECTED,299.0,190.0,,,,,35.0,18.0,87.0,38.0,,,103.0,52.0
+13,Application submitted by user,PAN_QC_DOC_RE_UPLOAD_REQUIRED,4.0,6.0,,,3.0,,,,,,,,1.0,
+13,Application submitted by user,PDC_INITIATE,,,4.0,1.0,,,,,,,1.0,,,
+13,Application submitted by user,PREDISBURSAL_FAILED,4.0,2.0,,,,,,,,,,,,
+13,Application submitted by user,PREDISBURSAL_REJECTED,17.0,16.0,,,,,,,4.0,3.0,,,6.0,7.0
+13,Application submitted by user,QC_ACTION_PENDING,11.0,5.0,,,,,1.0,2.0,3.0,1.0,3.0,2.0,11.0,5.0
+13,Application submitted by user,QC_REJECTED,7.0,4.0,,,,,1.0,1.0,3.0,2.0,3.0,1.0,9.0,2.0
+13,Application submitted by user,SETTLEMENT_BANK_QC_DOC_RE_UPLOAD_REQUIRED,,3.0,,,,,,1.0,1.0,1.0,,,3.0,3.0
+13,Application submitted by user,UC_IN_PROGRESS,,,,,,,3.0,2.0,,,,,,
+13,Application submitted by user,UDYAM_VALIDATION_REQUEST_FAILURE,,1.0,,,,,,,,,,,,
+13,Application submitted by user,VKYC_REQUIRED,,,73.0,63.0,,,,,,,,,,
+13,Application submitted by user,Subtotal,1848.0,779.0,688.0,379.0,124.0,29.0,195.0,84.0,309.0,126.0,226.0,151.0,509.0,160.0
+13,Subtotal,,1848.0,779.0,688.0,379.0,124.0,29.0,195.0,84.0,309.0,126.0,226.0,151.0,509.0,160.0
+14,Submit to LMS,LMS_ACCOUNT_ACTIVE,,,1.0,1.0,,,,,,,,,,
+14,Submit to LMS,LMS_CALLBACK_REJECTED,50.0,48.0,,,8.0,5.0,1.0,1.0,6.0,,,,52.0,16.0
+14,Submit to LMS,LMS_FETCH_DOCUMENTS_INIT,,,4.0,,,,,,,,,,,
+14,Submit to LMS,LMS_FETCH_RPS_INITIATED,,,4.0,6.0,,,,,,,,,,
+14,Submit to LMS,LMS_LAN_CREATE_INITIATE,,,5.0,4.0,,,,,,,,,,
+14,Submit to LMS,LMS_PDC_CHECK_INITIATE,,,97.0,44.0,,,,,,,35.0,32.0,,
+14,Submit to LMS,LMS_SUBMIT_APPLICATION_SUCCESS,167.0,96.0,,,274.0,98.0,37.0,24.0,52.0,26.0,,,193.0,68.0
+14,Submit to LMS,LOAN_DISBURSEMENT_FAILURE,,,3.0,1.0,,,,,,,,1.0,,
+14,Submit to LMS,LOAN_DISBURSEMENT_INITIATED,,,7.0,8.0,,,,,,,7.0,4.0,,
+14,Submit to LMS,Subtotal,217.0,144.0,121.0,64.0,282.0,103.0,38.0,25.0,58.0,26.0,42.0,37.0,245.0,84.0
+14,Subtotal,,217.0,144.0,121.0,64.0,282.0,103.0,38.0,25.0,58.0,26.0,42.0,37.0,245.0,84.0
+15,Disbursed,BUSINESS_PROOF_QC_ACTION_PENDING,167.0,105.0,,,15.0,6.0,,,,,,,68.0,20.0
+15,Disbursed,LMS_ACCOUNT_ACTIVE,,,,,,,,,,,,1.0,,
+15,Disbursed,LOAN_DISBURSEMENT_COMPLETED,,,2717.0,2074.0,,,,,,,,,,
+15,Disbursed,Subtotal,167.0,105.0,2717.0,2074.0,15.0,6.0,0.0,0.0,0.0,0.0,0.0,1.0,68.0,20.0
+15,Subtotal,,167.0,105.0,2717.0,2074.0,15.0,6.0,0.0,0.0,0.0,0.0,0.0,1.0,68.0,20.0
+16,Lead closed,LEAD_SUCCESSFULLY_CLOSED,6551.0,5952.0,,,410.0,216.0,733.0,490.0,1432.0,1071.0,,,1970.0,973.0
+16,Lead closed,LOAN_DISBURSEMENT_COMPLETED,,,,,,,,,,,1096.0,1030.0,,
+16,Lead closed,Subtotal,6551.0,5952.0,0.0,0.0,410.0,216.0,733.0,490.0,1432.0,1071.0,1096.0,1030.0,1970.0,973.0
+16,Subtotal,,6551.0,5952.0,0.0,0.0,410.0,216.0,733.0,490.0,1432.0,1071.0,1096.0,1030.0,1970.0,973.0
+1001,Unmapped,AA_CONSENT_RECEIVED,,,,,,,,,1.0,,,,,
+1001,Unmapped,AA_FAILURE,,,,,,,,,53.0,13.0,,,,
+1001,Unmapped,AA_REQUIRED,,,,,,,,,937.0,356.0,,,,
+1001,Unmapped,AWAIT_OFFER_ACCEPT,,,,,,,,,25.0,12.0,,,,
+1001,Unmapped,AWAIT_SELFIE,,,,,,,,,1363.0,346.0,,,,
+1001,Unmapped,BANK_NAME_MATCH,,,,,,,,,1.0,,,,,
+1001,Unmapped,BRE2_FAILURE,,,,,,,,,27.0,6.0,,,,
+1001,Unmapped,CHECK_LRE_RANKING,,,,,,,,,7.0,2.0,,,,
+1001,Unmapped,DIY_FI_DOC_UPLOADED,,,,,,,,,23.0,4.0,,,,
+1001,Unmapped,DIY_FI_REQUIRED,,,,,,,,,3.0,,,,,
+1001,Unmapped,EMANDATE_REQUIRED,,,,,,,,,10.0,7.0,,,,
+1001,Unmapped,EMANDATE_SUCCESS,,,2.0,2.0,,,,,,,,,,
+1001,Unmapped,ESIGN_INITIATE,,,,,,,,,11.0,3.0,,,,
+1001,Unmapped,FETCH_DOC_INIT_SUCCESS,,,,,,,,,,,3.0,1.0,,
+1001,Unmapped,FI_AWAITED,,,,,,,,,20.0,15.0,,,,
+1001,Unmapped,FI_ON_HOLD,,,,,,,,,21.0,10.0,,,,
+1001,Unmapped,FI_REJECTED,,,,,,,,,18.0,7.0,,,,
+1001,Unmapped,INITIATE_MULTIMODE_KYC,,,,,,,,,1522.0,462.0,,,,
+1001,Unmapped,KYC_COMPLETED,,,,,,,,,,,1.0,,,
+1001,Unmapped,KYC_FAILED,,,,,,,,,686.0,199.0,,,,
+1001,Unmapped,KYC_INITIATED_DIGILOCKER,,,,,,,,,15.0,4.0,,,,
+1001,Unmapped,LEAD_RESET,,,,,,,,,4578.0,1043.0,,,,
+1001,Unmapped,LENDER_APPICATION_CREATE_INITIATED,,,,,,,,,4.0,,,,,
+1001,Unmapped,LENDER_BANK_DETAILS_SHARING_INITIATED,,,,,,,,,1.0,,,,,
+1001,Unmapped,LENDER_BRE1_INIT,,,,,,,,,1.0,,,,,
+1001,Unmapped,LENDER_BRE1_INIT_FAILED,,,,,,,,,2844.0,663.0,,,,
+1001,Unmapped,LENDER_BRE2_INIT,,,,,,,,,3.0,2.0,,,,
+1001,Unmapped,LENDER_BRE2_INIT_FAILED,,,,,,,,,695.0,190.0,,,,
+1001,Unmapped,LENDER_BRE2_INIT_OFFER_PENDING,,,,,,,,,4.0,2.0,,,,
+1001,Unmapped,LENDER_CREATE_APPLICATION_REJECTED,,,,,,,,,8.0,,,,,
+1001,Unmapped,LENDER_DOC_UPLOAD_IN_PROGRESS_FI_REPORT,,,,,,,,,2.0,,,,,
+1001,Unmapped,LENDER_LEAD_UPDATE_UPDATE_ADDITIONAL_DETAILS,,,,,,,,,9.0,,,,,
+1001,Unmapped,LENDER_LEAD_UPDATE_UPDATE_CONSENTS_DETAILS,,,,,,,,,1.0,,,,,
+1001,Unmapped,LMS_FETCH_RPS_FETCHED,,,3.0,,,,,,,,,1.0,,
+1001,Unmapped,LOAN_DISBURSEMENT_COMPLETED,,,,,,,,,197.0,62.0,,,,
+1001,Unmapped,LOAN_DISBURSEMENT_INITIATED,,,,,,,,,7.0,2.0,,,,
+1001,Unmapped,LRE_PARENT,,,,,,,,,172.0,57.0,,,,
+1001,Unmapped,PENNY_DROP_FAILED,,,,,,,,,6.0,1.0,,,,
+1001,Unmapped,PENNY_DROP_INITIATED,,,,,,,,,1.0,,,,,
+1001,Unmapped,SELFIE_RE_UPLOAD,,,,,,,,,17.0,4.0,,,,
+1001,Unmapped,SELFIE_UPLOADING,,,,,,,,,1.0,,,,,
+1001,Unmapped,SERVICIBILITY_CHECK,,,,,,,,,3.0,,,,,
+1001,Unmapped,SERVICIBILITY_FAILURE,,,,,,,,,295.0,95.0,,,,
+1001,Unmapped,SETTLEMENT_BANK_UPDATE_REQUIRED,,,,,,,,,11.0,3.0,,,,
+1001,Unmapped,Subtotal,0.0,0.0,5.0,2.0,0.0,0.0,0.0,0.0,13603.0,3570.0,4.0,2.0,0.0,0.0
+1001,Subtotal,,0.0,0.0,5.0,2.0,0.0,0.0,0.0,0.0,13603.0,3570.0,4.0,2.0,0.0,0.0
+1002,Unmapped,LENDER_KFS_FETCH_SUCCESS,,,,,1.0,,,,,,,,,
+1002,Unmapped,RE_SUBMIT_SETTLEMENT_BANK,19.0,6.0,,,,,1.0,,,,,,,
+1002,Unmapped,Subtotal,19.0,6.0,0.0,0.0,1.0,0.0,1.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0
+1002,Subtotal,,19.0,6.0,0.0,0.0,1.0,0.0,1.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0
+Total (Sum),,,21878.0,14324.0,10725.0,6604.0,2092.0,925.0,2835.0,1477.0,21031.0,7473.0,4691.0,3053.0,6831.0,3044.0

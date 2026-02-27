@@ -67,7 +67,7 @@ import { RichInsightPanel, type RichInsightItem } from "@/components/dashboard/r
 import { KpiDeepDiveModal, ClickableKpiCard, KpiDeepDiveConfig } from "@/components/dashboard/kpi-deep-dive-modal";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
-const AVG_ATS = 2.5; // Lakhs
+const AVG_ATS = 1.83; // Lakhs (MTD 1528 Cr / 83401 loans)
 
 const LOAN_STAGES = [
   "Lead Create",

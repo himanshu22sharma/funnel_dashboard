@@ -1,85 +1,29 @@
 product_type,isautoleadcreated,major_index,major_stage,Leads,Conv%
-Fresh,Flow1(Auto),2,Workable leads,304392,
-Fresh,Flow1(Auto),3,Bureau pull success,285890,93.92
-Fresh,Flow1(Auto),4,BRE1 completed,171538,60.00
-Fresh,Flow1(Auto),5,Marketplace Offer Selected,83167,48.48
-Fresh,Flow2(Manual),2,Workable leads,81786,
-Renewal,Flow1(Auto),2,Workable leads,81167,
-Renewal,Flow1(Auto),3,Bureau pull success,79038,97.38
-Fresh,Flow2(Manual),3,Bureau pull success,73804,90.24
-Fresh,Flow2(Manual),4,BRE1 completed,38303,51.90
-Renewal,Flow1(Auto),4,BRE1 completed,34964,44.24
-Fresh,Flow2(Manual),5,Marketplace Offer Selected,30463,79.53
-MicroML,Flow1(Auto),2,Workable leads,20943,
-MicroML,Flow1(Auto),3,Bureau pull success,20797,99.30
-Renewal,Flow1(Auto),5,Marketplace Offer Selected,18797,53.76
-Fresh,Flow1(Auto),6,Child_Lead_Created,18018,21.66
-Renewal,Flow2(Manual),2,Workable leads,15674,
-Fresh,Flow1(Auto),7,Selfie uploaded,15253,84.65
-Renewal,Flow2(Manual),3,Bureau pull success,15194,96.94
-Fresh,Flow1(Auto),8,KYC completed,12286,80.55
-Fresh,Flow2(Manual),6,Child_Lead_Created,11919,39.13
-Fresh,Flow2(Manual),7,Selfie uploaded,10491,88.02
-Fresh,Flow1(Auto),9,BRE2 completed,9099,74.06
-Fresh,Flow1(Auto),10,Disbursal acc verified,8975,98.64
-Fresh,Flow2(Manual),8,KYC completed,8587,81.85
-Fresh,Flow1(Auto),11,Review submit,8094,90.18
-Renewal,Flow1(Auto),6,Child_Lead_Created,7783,41.41
-Fresh,Flow1(Auto),13,Application submitted by user,7267,100.28
-Fresh,Flow1(Auto),12,Mandate done,7247,89.54
-Fresh,Flow2(Manual),9,BRE2 completed,7192,83.75
-Renewal,Flow1(Auto),7,Selfie uploaded,7130,91.61
-Fresh,Flow2(Manual),10,Disbursal acc verified,7080,98.44
-Renewal,Flow2(Manual),4,BRE1 completed,6766,44.53
-MicroML,Flow2(Manual),2,Workable leads,6563,
-Fresh,Flow2(Manual),11,Review submit,6544,92.43
-MicroML,Flow1(Auto),4,BRE1 completed,6491,31.21
-MicroML,Flow2(Manual),3,Bureau pull success,6432,98.00
-Renewal,Flow1(Auto),8,KYC completed,6291,88.23
-Fresh,Flow2(Manual),13,Application submitted by user,5753,100.93
-Fresh,Flow2(Manual),12,Mandate done,5700,87.10
-Renewal,Flow2(Manual),5,Marketplace Offer Selected,5408,79.93
-Fresh,Flow1(Auto),14,Submit to LMS,4912,67.59
-Renewal,Flow1(Auto),9,BRE2 completed,4459,70.88
-Renewal,Flow1(Auto),10,Disbursal acc verified,4404,98.77
-Fresh,Flow2(Manual),14,Submit to LMS,4395,76.39
-Fresh,Flow1(Auto),15,Disbursed,4257,86.67
-Renewal,Flow1(Auto),11,Review submit,4120,93.55
-Fresh,Flow2(Manual),15,Disbursed,3925,89.31
-Renewal,Flow1(Auto),13,Application submitted by user,3881,100.05
-Renewal,Flow1(Auto),12,Mandate done,3879,94.15
-Renewal,Flow2(Manual),6,Child_Lead_Created,3258,60.24
-Renewal,Flow2(Manual),7,Selfie uploaded,2983,91.56
-Renewal,Flow2(Manual),8,KYC completed,2611,87.53
-Renewal,Flow1(Auto),14,Submit to LMS,2551,65.73
-Renewal,Flow1(Auto),15,Disbursed,2247,88.08
-Renewal,Flow2(Manual),9,BRE2 completed,2069,79.24
-Renewal,Flow2(Manual),10,Disbursal acc verified,2039,98.55
-Renewal,Flow2(Manual),11,Review submit,1917,94.02
-MicroML,Flow1(Auto),5,Marketplace Offer Selected,1875,28.89
-MicroML,Flow1(Auto),6,Child_Lead_Created,1875,100.00
-Renewal,Flow2(Manual),13,Application submitted by user,1810,100.22
-Renewal,Flow2(Manual),12,Mandate done,1806,94.21
-MicroML,Flow2(Manual),4,BRE1 completed,1554,24.16
-MicroML,Flow2(Manual),5,Marketplace Offer Selected,1497,96.33
-MicroML,Flow2(Manual),6,Child_Lead_Created,1496,99.93
-MicroML,Flow1(Auto),7,Selfie uploaded,1375,73.33
-Renewal,Flow2(Manual),14,Submit to LMS,1318,72.82
-Renewal,Flow2(Manual),15,Disbursed,1183,89.76
-MicroML,Flow2(Manual),7,Selfie uploaded,1049,70.12
-MicroML,Flow1(Auto),8,KYC completed,751,54.62
-MicroML,Flow1(Auto),9,BRE2 completed,663,88.28
-MicroML,Flow1(Auto),10,Disbursal acc verified,622,93.82
-MicroML,Flow2(Manual),8,KYC completed,580,55.29
-MicroML,Flow1(Auto),11,Review submit,537,86.33
-MicroML,Flow2(Manual),9,BRE2 completed,526,90.69
-MicroML,Flow2(Manual),10,Disbursal acc verified,492,93.54
-MicroML,Flow1(Auto),12,Mandate done,432,80.45
-MicroML,Flow2(Manual),11,Review submit,388,78.86
-MicroML,Flow1(Auto),13,Application submitted by user,371,85.88
-MicroML,Flow1(Auto),14,Submit to LMS,355,95.69
-MicroML,Flow1(Auto),15,Disbursed,347,97.75
-MicroML,Flow2(Manual),12,Mandate done,287,73.97
-MicroML,Flow2(Manual),13,Application submitted by user,259,90.24
-MicroML,Flow2(Manual),14,Submit to LMS,242,93.44
-MicroML,Flow2(Manual),15,Disbursed,239,98.76
+Fresh,Flow1(Auto),2,Workable leads,372664,
+Fresh,Flow1(Auto),3,Bureau pull success,358494,96
+Fresh,Flow1(Auto),4,BRE1 completed,222588,62
+Fresh,Flow1(Auto),5,Marketplace Offer Selected,76598,34
+Fresh,Flow1(Auto),6,Child_Lead_Created,58471,76
+Fresh,Flow1(Auto),7,Selfie uploaded,38142,65
+Fresh,Flow1(Auto),8,KYC completed,30554,80
+Fresh,Flow1(Auto),9,BRE2 completed,25183,82
+Fresh,Flow1(Auto),10,Disbursal acc verified,24837,99
+Fresh,Flow1(Auto),11,Review submit,22952,92
+Fresh,Flow1(Auto),12,Mandate done,20940,91
+Fresh,Flow1(Auto),13,Application submitted by user,21048,101
+Fresh,Flow1(Auto),14,Submit to LMS,16362,78
+Fresh,Flow1(Auto),15,Disbursed,15176,93
+Fresh,Flow2(Manual),2,Workable leads,88385,
+Fresh,Flow2(Manual),3,Bureau pull success,82972,94
+Fresh,Flow2(Manual),4,BRE1 completed,46729,56
+Fresh,Flow2(Manual),5,Marketplace Offer Selected,34794,74
+Fresh,Flow2(Manual),6,Child_Lead_Created,31345,90
+Fresh,Flow2(Manual),7,Selfie uploaded,24674,79
+Fresh,Flow2(Manual),8,KYC completed,20210,82
+Fresh,Flow2(Manual),9,BRE2 completed,17999,89
+Fresh,Flow2(Manual),10,Disbursal acc verified,17685,98
+Fresh,Flow2(Manual),11,Review submit,16591,94
+Fresh,Flow2(Manual),12,Mandate done,14615,88
+Fresh,Flow2(Manual),13,Application submitted by user,14798,101
+Fresh,Flow2(Manual),14,Submit to LMS,12581,85
+Fresh,Flow2(Manual),15,Disbursed,11951,95

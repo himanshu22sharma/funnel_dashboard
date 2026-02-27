@@ -28,6 +28,12 @@ export interface DisbursalSummaryRow {
   child_leads: number;
   disbursed: number;
   disbursal_pct: number;
+  /** MTD amount in Cr (optional; when present, used for MTD total) */
+  amt_cr?: number;
+  /** LMSD/LMTD loan count (optional; when present, used for LMTD total) */
+  lmtd_disbursed?: number;
+  /** LMSD/LMTD amount in Cr (optional; when present, used for LMTD amount) */
+  lmtd_amt_cr?: number;
 }
 
 export interface L2AnalysisRow {
@@ -42,12 +48,40 @@ export interface L2AnalysisRow {
   stuck_pct: number | null;
 }
 
+/** Overall disbursement summary: AOP, MTD (Cr), LMSD (Cr) by lender */
+export interface DisbursementSummaryOverallRow {
+  lender: string;
+  aop: number;
+  mtd_cr: number;
+  lmsd_cr: number;
+}
+
+/** Lender-wise disbursal breakdown: Loan, Amt(Cr.), ATS, Avg, Avg PF */
+export interface DisbursalBreakdownLenderRow {
+  lender: string;
+  loan: number;
+  amt_cr: number;
+  ats: number;
+  avg: number;
+  avg_pf: number;
+}
+
+/** Lead-type (flow) wise disbursal breakdown */
+export interface DisbursalBreakdownLeadTypeRow {
+  lead_type: string;
+  loan: number;
+  amt_cr: number;
+  ats: number;
+  avg: number;
+  avg_pf: number;
+}
+
 // ─── CSV Fetching ───────────────────────────────────────────────────────────
 
 const BASE = process.env.NEXT_PUBLIC_BASE_PATH || "";
 
 async function fetchCSV<T>(path: string, transform: (row: Record<string, string>) => T): Promise<T[]> {
-  const res = await fetch(`${BASE}${path}`);
+  const res = await fetch(`${BASE}${path}?v=${Date.now()}`, { cache: "no-store" });
   const text = await res.text();
   const parsed = Papa.parse<Record<string, string>>(text, {
     header: true,
@@ -87,6 +121,9 @@ export async function fetchDisbursalSummary(): Promise<DisbursalSummaryRow[]> {
     child_leads: parseInt(row["#Child_Leads_Created"]?.replace(/,/g, "")) || 0,
     disbursed: parseInt(row["#Disbursed"]?.replace(/,/g, "")) || 0,
     disbursal_pct: parseFloat(row["Disbursal %"]) || 0,
+    amt_cr: row["Amt_Cr"] != null && row["Amt_Cr"] !== "" ? parseFloat(String(row["Amt_Cr"]).replace(/,/g, "")) : undefined,
+    lmtd_disbursed: row["#Disbursed_LMSD"] != null && row["#Disbursed_LMSD"] !== "" ? parseInt(String(row["#Disbursed_LMSD"]).replace(/,/g, "")) || 0 : undefined,
+    lmtd_amt_cr: row["Amt_Cr_LMSD"] != null && row["Amt_Cr_LMSD"] !== "" ? parseFloat(String(row["Amt_Cr_LMSD"]).replace(/,/g, "")) : undefined,
   }));
 }
 
@@ -101,6 +138,81 @@ export async function fetchL2Analysis(): Promise<L2AnalysisRow[]> {
     sub_stage: row["sub_stage"]?.trim() || null,
     leads: parseInt(row["Leads"]?.replace(/,/g, "")) || 0,
     stuck_pct: row["Stuck%"] ? parseFloat(row["Stuck%"]) : null,
+  }));
+}
+
+export async function fetchDisbursementSummaryOverall(): Promise<DisbursementSummaryOverallRow[]> {
+  return fetchCSV("/data/Disbursement_Summary_Overall.csv", (row) => ({
+    lender: row["lender"]?.trim() || "",
+    aop: parseFloat(row["aop"]?.replace(/,/g, "")) || 0,
+    mtd_cr: parseFloat(row["mtd_cr"]?.replace(/,/g, "")) || 0,
+    lmsd_cr: parseFloat(row["lmsd_cr"]?.replace(/,/g, "")) || 0,
+  }));
+}
+
+export async function fetchDisbursalMTDLender(): Promise<DisbursalBreakdownLenderRow[]> {
+  return fetchCSV("/data/Disbursal_MTD_Lender.csv", (row) => ({
+    lender: row["lender"]?.trim() || "",
+    loan: parseInt(row["loan"]?.replace(/,/g, "")) || 0,
+    amt_cr: parseFloat(row["amt_cr"]?.replace(/,/g, "")) || 0,
+    ats: parseInt(row["ats"]?.replace(/,/g, "")) || 0,
+    avg: parseFloat(row["avg"]?.replace(/,/g, "")) || 0,
+    avg_pf: parseFloat(row["avg_pf"]?.replace(/,/g, "")) || 0,
+  }));
+}
+
+export async function fetchDisbursalLMSDLender(): Promise<DisbursalBreakdownLenderRow[]> {
+  return fetchCSV("/data/Disbursal_LMSD_Lender.csv", (row) => ({
+    lender: row["lender"]?.trim() || "",
+    loan: parseInt(row["loan"]?.replace(/,/g, "")) || 0,
+    amt_cr: parseFloat(row["amt_cr"]?.replace(/,/g, "")) || 0,
+    ats: parseInt(row["ats"]?.replace(/,/g, "")) || 0,
+    avg: parseFloat(row["avg"]?.replace(/,/g, "")) || 0,
+    avg_pf: parseFloat(row["avg_pf"]?.replace(/,/g, "")) || 0,
+  }));
+}
+
+export async function fetchDisbursalFTDLender(): Promise<DisbursalBreakdownLenderRow[]> {
+  return fetchCSV("/data/Disbursal_FTD_Lender.csv", (row) => ({
+    lender: row["lender"]?.trim() || "",
+    loan: parseInt(row["loan"]?.replace(/,/g, "")) || 0,
+    amt_cr: parseFloat(row["amt_cr"]?.replace(/,/g, "")) || 0,
+    ats: parseInt(row["ats"]?.replace(/,/g, "")) || 0,
+    avg: parseFloat(row["avg"]?.replace(/,/g, "")) || 0,
+    avg_pf: parseFloat(row["avg_pf"]?.replace(/,/g, "")) || 0,
+  }));
+}
+
+export async function fetchDisbursalMTDLeadType(): Promise<DisbursalBreakdownLeadTypeRow[]> {
+  return fetchCSV("/data/Disbursal_MTD_LeadType.csv", (row) => ({
+    lead_type: row["lead_type"]?.trim() || "",
+    loan: parseInt(row["loan"]?.replace(/,/g, "")) || 0,
+    amt_cr: parseFloat(row["amt_cr"]?.replace(/,/g, "")) || 0,
+    ats: parseInt(row["ats"]?.replace(/,/g, "")) || 0,
+    avg: parseFloat(row["avg"]?.replace(/,/g, "")) || 0,
+    avg_pf: parseFloat(row["avg_pf"]?.replace(/,/g, "")) || 0,
+  }));
+}
+
+export async function fetchDisbursalLMSDLeadType(): Promise<DisbursalBreakdownLeadTypeRow[]> {
+  return fetchCSV("/data/Disbursal_LMSD_LeadType.csv", (row) => ({
+    lead_type: row["lead_type"]?.trim() || "",
+    loan: parseInt(row["loan"]?.replace(/,/g, "")) || 0,
+    amt_cr: parseFloat(row["amt_cr"]?.replace(/,/g, "")) || 0,
+    ats: parseInt(row["ats"]?.replace(/,/g, "")) || 0,
+    avg: parseFloat(row["avg"]?.replace(/,/g, "")) || 0,
+    avg_pf: parseFloat(row["avg_pf"]?.replace(/,/g, "")) || 0,
+  }));
+}
+
+export async function fetchDisbursalFTDLeadType(): Promise<DisbursalBreakdownLeadTypeRow[]> {
+  return fetchCSV("/data/Disbursal_FTD_LeadType.csv", (row) => ({
+    lead_type: row["lead_type"]?.trim() || "",
+    loan: parseInt(row["loan"]?.replace(/,/g, "")) || 0,
+    amt_cr: parseFloat(row["amt_cr"]?.replace(/,/g, "")) || 0,
+    ats: parseInt(row["ats"]?.replace(/,/g, "")) || 0,
+    avg: parseFloat(row["avg"]?.replace(/,/g, "")) || 0,
+    avg_pf: parseFloat(row["avg_pf"]?.replace(/,/g, "")) || 0,
   }));
 }
 
@@ -134,7 +246,12 @@ export function formatDelta(val: number): string {
 
 // ─── AOP Config (hardcoded for now) ─────────────────────────────────────────
 
-export const AOP_TARGET_CR = 500; // in Crores - configurable later
+export const AOP_TARGET_CR = 500; // Fallback Feb month target (Cr) when Disbursement_Summary_Overall not loaded
+
+// ─── Reference date & month pacing (Feb 2026) ───────────────────────────────
+export const REFERENCE_DATE = new Date(2026, 1, 24); // 24-Feb-26
+export const DAYS_ELAPSED = 23; // days passed in month (as of 24-Feb-26)
+export const DAYS_IN_MONTH = 28; // Feb 2026
 
 // ─── Mock monthly trend data (for Executive Summary) ────────────────────────
 // Since we only have MTD snapshot, we'll generate reasonable trend data
@@ -149,8 +266,8 @@ export interface MonthlyTrend {
 
 export function generateMonthlyTrends(disbursalData: DisbursalSummaryRow[]): MonthlyTrend[] {
   const totalDisbursed = disbursalData.reduce((sum, r) => sum + r.disbursed, 0);
-  // Average ticket size assumption: ~2.5L per loan (common for merchant lending)
-  const avgATS = 2.5;
+  // Average ticket size: MTD 1528 Cr / 83401 loans ≈ 1.83 L per loan
+  const avgATS = 1.83;
   const currentAmountCr = (totalDisbursed * avgATS) / 100; // lakhs to crores
 
   const months = [
