@@ -64,13 +64,27 @@ import { InlineFeedbackModal } from "@/components/dashboard/rich-insight-card";
 import { KpiDeepDiveModal, ClickableKpiCard, KpiDeepDiveConfig } from "@/components/dashboard/kpi-deep-dive-modal";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
-/** Avg ticket size (Lakh): MTD 1528 Cr / 83401 loans ≈ 1.83 L */
+/** Avg ticket size (Lakh) */
 const AVG_ATS = 1.83;
 const LENDER_AOP: Record<string, number> = {
-  FULLERTON: 120, KSF: 80, PIRAMAL: 60, SHRIRAM: 55,
-  NACL: 45, PYFL: 40, MFL: 35, UCL: 30,
+  SMFG: 1375, PIRAMAL: 140, Piramal: 140, NACL: 130, MFL: 130,
+  PAYU: 115, SRIRAM: 100, KSF: 100, TCL: 15, UCL: 0,
 };
-const TOTAL_AOP = Object.values(LENDER_AOP).reduce((s, v) => s + v, 0);
+const TOTAL_AOP = 2105;
+
+const ACTUAL_MTD_COUNT = 102415;
+const ACTUAL_LMTD_COUNT = 101583;
+const ACTUAL_MTD_AMT_CR = 1949.24;
+const ACTUAL_LMTD_AMT_CR = 2053.78;
+const ACTUAL_LENDER_DATA: { lender: string; mtdCount: number; amtCr: number; lmtdCount: number; lmtdAmtCr: number }[] = [
+  { lender: "SMFG", mtdCount: 54809, amtCr: 1238.54, lmtdCount: 50286, lmtdAmtCr: 1284.06 },
+  { lender: "PAYU", mtdCount: 14292, amtCr: 223.90, lmtdCount: 15313, lmtdAmtCr: 230.13 },
+  { lender: "KSF", mtdCount: 13363, amtCr: 135.96, lmtdCount: 13413, lmtdAmtCr: 125.71 },
+  { lender: "Piramal", mtdCount: 8688, amtCr: 142.10, lmtdCount: 9816, lmtdAmtCr: 174.44 },
+  { lender: "NACL", mtdCount: 5565, amtCr: 119.05, lmtdCount: 4971, lmtdAmtCr: 110.96 },
+  { lender: "MFL", mtdCount: 5386, amtCr: 82.88, lmtdCount: 7343, lmtdAmtCr: 117.60 },
+  { lender: "TCL", mtdCount: 312, amtCr: 6.81, lmtdCount: 441, lmtdAmtCr: 10.88 },
+];
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 interface ChartBar {
@@ -219,20 +233,20 @@ export default function InsightsSummary() {
 
     const mtdWorkable = mtd[firstIdx]?.leads || 0;
     const lmtdWorkable = lmtd[firstIdx]?.leads || 0;
-    const mtdDisbursed = mtd[lastIdx]?.leads || 0;
-    const lmtdDisbursed = lmtd[lastIdx]?.leads || 0;
+    const mtdDisbursed = ACTUAL_MTD_COUNT;
+    const lmtdDisbursed = ACTUAL_LMTD_COUNT;
 
     const mtdE2E = mtdWorkable > 0 ? (mtdDisbursed / mtdWorkable) * 100 : 0;
     const lmtdE2E = lmtdWorkable > 0 ? (lmtdDisbursed / lmtdWorkable) * 100 : 0;
     const e2eDelta = mtdE2E - lmtdE2E;
     const volumeDelta = lmtdWorkable > 0 ? ((mtdWorkable - lmtdWorkable) / lmtdWorkable) * 100 : 0;
 
-    const mtdAmountCr = (mtdDisbursed * AVG_ATS) / 100;
+    const mtdAmountCr = ACTUAL_MTD_AMT_CR;
     const dayOfMonth = new Date().getDate();
     const daysInMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate();
     const pace = dayOfMonth / daysInMonth;
     const projectedCr = pace > 0 ? mtdAmountCr / pace : 0;
-    const monthlyTarget = TOTAL_AOP / 12;
+    const monthlyTarget = TOTAL_AOP;
     const aopPacing = monthlyTarget > 0 ? (projectedCr / monthlyTarget) * 100 : 0;
 
     const stageDeltas: { stage: string; index: number; mtdConv: number; lmtdConv: number; delta: number }[] = [];
@@ -243,21 +257,22 @@ export default function InsightsSummary() {
       stageDeltas.push({ stage: mtd[cur]?.stage || lmtd[cur]?.stage || `Stage ${cur}`, index: cur, mtdConv: parseFloat(mtdConv.toFixed(1)), lmtdConv: parseFloat(lmtdConv.toFixed(1)), delta: parseFloat((mtdConv - lmtdConv).toFixed(2)) });
     }
 
-    const lenders = Array.from(new Set(filteredL2.map((r) => r.lender))).sort();
+    const actualLenderMap = new Map(ACTUAL_LENDER_DATA.map((l) => [l.lender, l]));
+    const lenders = Array.from(new Set([...filteredL2.map((r) => r.lender), ...ACTUAL_LENDER_DATA.map((l) => l.lender)])).sort();
     const lenderPerf = lenders.map((lender) => {
       const lRows = filteredL2.filter((r) => r.lender === lender);
       const lMtdFirst = lRows.filter((r) => r.month_start === "1.MTD" && r.major_index === firstIdx && !r.sub_stage).reduce((s, r) => s + r.leads, 0);
-      const lMtdLast = lRows.filter((r) => r.month_start === "1.MTD" && r.major_index === lastIdx && !r.sub_stage).reduce((s, r) => s + r.leads, 0);
       const lLmtdFirst = lRows.filter((r) => r.month_start === "2.LMTD" && r.major_index === firstIdx && !r.sub_stage).reduce((s, r) => s + r.leads, 0);
-      const lLmtdLast = lRows.filter((r) => r.month_start === "2.LMTD" && r.major_index === lastIdx && !r.sub_stage).reduce((s, r) => s + r.leads, 0);
+      const actual = actualLenderMap.get(lender);
+      const lMtdLast = actual ? actual.mtdCount : lRows.filter((r) => r.month_start === "1.MTD" && r.major_index === lastIdx && !r.sub_stage).reduce((s, r) => s + r.leads, 0);
       const mc = lMtdFirst > 0 ? (lMtdLast / lMtdFirst) * 100 : 0;
-      const lc = lLmtdFirst > 0 ? (lLmtdLast / lLmtdFirst) * 100 : 0;
-      const disbCr = (lMtdLast * AVG_ATS) / 100;
-      const monthlyAop = (LENDER_AOP[lender] || 0) / 12;
+      const lc = lLmtdFirst > 0 ? ((actual ? actual.lmtdCount : lRows.filter((r) => r.month_start === "2.LMTD" && r.major_index === lastIdx && !r.sub_stage).reduce((s, r) => s + r.leads, 0)) / lLmtdFirst) * 100 : 0;
+      const disbCr = actual ? actual.amtCr : (lMtdLast * AVG_ATS) / 100;
+      const monthlyAop = LENDER_AOP[lender] || 0;
       const projected = pace > 0 ? disbCr / pace : 0;
       const aopPct = monthlyAop > 0 ? (projected / monthlyAop) * 100 : 0;
       return { lender, mtdDisbursed: lMtdLast, disbCr: parseFloat(disbCr.toFixed(1)), mtdConv: parseFloat(mc.toFixed(2)), lmtdConv: parseFloat(lc.toFixed(2)), delta: parseFloat((mc - lc).toFixed(2)), aopPct: parseFloat(aopPct.toFixed(0)), volumeGrowth: lLmtdFirst > 0 ? parseFloat((((lMtdFirst - lLmtdFirst) / lLmtdFirst) * 100).toFixed(1)) : 0 };
-    });
+    }).filter((l) => l.mtdDisbursed > 0 || l.disbCr > 0);
 
     const lenderStageConv = (lender: string) => {
       const lRows = filteredL2.filter((r) => r.lender === lender && !r.sub_stage && Math.floor(r.major_index) === r.major_index && r.major_index < 1000 && r.major_index !== 1);
@@ -317,7 +332,54 @@ export default function InsightsSummary() {
 
     const criticalStages = stageDeltas.filter((s) => s.delta < -5).length;
     const criticalLenders = lenderPerf.filter((l) => l.delta < -3 || l.aopPct < 60).length;
-    return { mtdWorkable, lmtdWorkable, mtdDisbursed, lmtdDisbursed, mtdE2E: parseFloat(mtdE2E.toFixed(2)), lmtdE2E: parseFloat(lmtdE2E.toFixed(2)), e2eDelta: parseFloat(e2eDelta.toFixed(2)), volumeDelta: parseFloat(volumeDelta.toFixed(1)), mtdAmountCr: parseFloat(mtdAmountCr.toFixed(1)), projectedCr: parseFloat(projectedCr.toFixed(1)), monthlyTarget: parseFloat(monthlyTarget.toFixed(1)), aopPacing: parseFloat(aopPacing.toFixed(0)), stageDeltas, lenderPerf, lenderStageConv, subStageData, lenderStageDelta, programPerf, criticalStages, criticalLenders, dayOfMonth, daysInMonth, allIndices };
+
+    // ── Funnel Insights: Lender × Flow × Stage performance ──────────────
+    const flows = Array.from(new Set(filteredL2.map((r) => r.isautoleadcreated))).filter(Boolean).sort();
+    const lenderStageFlowPerf: { lender: string; flow: string; stage: string; mtdConv: number; lmtdConv: number; delta: number; mtdLeads: number }[] = [];
+    for (const lender of lenders) {
+      for (const flow of flows) {
+        const lRows = filteredL2.filter((r) => r.lender === lender && r.isautoleadcreated === flow && !r.sub_stage && Math.floor(r.major_index) === r.major_index && r.major_index < 1000 && r.major_index !== 1);
+        const lMtd: Record<number, number> = {};
+        const lLmtd: Record<number, number> = {};
+        lRows.filter((r) => r.month_start === "1.MTD").forEach((r) => { lMtd[r.major_index] = (lMtd[r.major_index] || 0) + r.leads; });
+        lRows.filter((r) => r.month_start === "2.LMTD").forEach((r) => { lLmtd[r.major_index] = (lLmtd[r.major_index] || 0) + r.leads; });
+        for (let i = 1; i < allIndices.length; i++) {
+          const cur = allIndices[i]; const prev = allIndices[i - 1];
+          const mtdConv = (lMtd[prev] || 0) > 0 ? ((lMtd[cur] || 0) / (lMtd[prev] || 0)) * 100 : 0;
+          const lmtdConv = (lLmtd[prev] || 0) > 0 ? ((lLmtd[cur] || 0) / (lLmtd[prev] || 0)) * 100 : 0;
+          if ((lMtd[prev] || 0) > 50 || (lLmtd[prev] || 0) > 50) {
+            lenderStageFlowPerf.push({ lender, flow, stage: mtd[cur]?.stage || lmtd[cur]?.stage || `Stage ${cur}`, mtdConv: parseFloat(mtdConv.toFixed(1)), lmtdConv: parseFloat(lmtdConv.toFixed(1)), delta: parseFloat((mtdConv - lmtdConv).toFixed(2)), mtdLeads: lMtd[cur] || 0 });
+          }
+        }
+      }
+    }
+
+    const worstCombos = lenderStageFlowPerf.filter((r) => r.delta < -5).sort((a, b) => a.delta - b.delta).slice(0, 5);
+    const badCombos = lenderStageFlowPerf.filter((r) => r.delta >= -5 && r.delta < -2).sort((a, b) => a.delta - b.delta).slice(0, 5);
+    const betterCombos = lenderStageFlowPerf.filter((r) => r.delta > 0 && r.delta <= 5).sort((a, b) => b.delta - a.delta).slice(0, 5);
+    const bestCombos = lenderStageFlowPerf.filter((r) => r.delta > 5).sort((a, b) => b.delta - a.delta).slice(0, 5);
+
+    const revenueLeakage = stageDeltas.filter((s) => s.delta < 0).map((s) => {
+      const prevIdx = allIndices[allIndices.indexOf(s.index) - 1];
+      const prevMtdLeads = mtd[prevIdx]?.leads || 0;
+      const leadsLost = Math.round((Math.abs(s.delta) / 100) * prevMtdLeads);
+      const impactCr = parseFloat((leadsLost * AVG_ATS / 100).toFixed(1));
+      return { stage: s.stage, delta: s.delta, leadsLost, impactCr };
+    }).sort((a, b) => b.impactCr - a.impactCr);
+    const totalLeakageCr = parseFloat(revenueLeakage.reduce((s, r) => s + r.impactCr, 0).toFixed(1));
+
+    const focusAreas: string[] = [];
+    if (revenueLeakage.length > 0) focusAreas.push(`Fix "${revenueLeakage[0].stage}" — largest leakage ~₹${revenueLeakage[0].impactCr} Cr (${revenueLeakage[0].leadsLost.toLocaleString("en-IN")} leads lost)`);
+    if (worstCombos.length > 0) focusAreas.push(`Investigate ${worstCombos[0].lender} × ${worstCombos[0].stage} (${worstCombos[0].flow}) — ${worstCombos[0].delta.toFixed(1)}pp drop`);
+    const bigDropLenders = lenderPerf.filter((l) => l.delta < -3).sort((a, b) => a.delta - b.delta);
+    if (bigDropLenders.length > 0) focusAreas.push(`${bigDropLenders[0].lender} overall E2E conv dropped ${Math.abs(bigDropLenders[0].delta).toFixed(1)}pp — deep-dive needed`);
+    const decliningPrograms = programPerf.filter((p) => p.delta < -2).sort((a, b) => a.delta - b.delta);
+    if (decliningPrograms.length > 0) focusAreas.push(`${decliningPrograms[0].program} program conv dropped ${Math.abs(decliningPrograms[0].delta).toFixed(1)}pp`);
+    if (totalLeakageCr > 0) focusAreas.push(`Total estimated revenue leakage: ~₹${totalLeakageCr} Cr across ${revenueLeakage.length} declining stages`);
+
+    const funnelInsights = { worstCombos, badCombos, betterCombos, bestCombos, revenueLeakage, totalLeakageCr, focusAreas, flows };
+
+    return { mtdWorkable, lmtdWorkable, mtdDisbursed, lmtdDisbursed, mtdE2E: parseFloat(mtdE2E.toFixed(2)), lmtdE2E: parseFloat(lmtdE2E.toFixed(2)), e2eDelta: parseFloat(e2eDelta.toFixed(2)), volumeDelta: parseFloat(volumeDelta.toFixed(1)), mtdAmountCr: parseFloat(mtdAmountCr.toFixed(1)), projectedCr: parseFloat(projectedCr.toFixed(1)), monthlyTarget: parseFloat(monthlyTarget.toFixed(1)), aopPacing: parseFloat(aopPacing.toFixed(0)), stageDeltas, lenderPerf, lenderStageConv, subStageData, lenderStageDelta, programPerf, criticalStages, criticalLenders, dayOfMonth, daysInMonth, allIndices, funnelInsights };
   }, [filteredL2]);
 
   // ─── Briefing items with expanded details & L2 drills ─────────────────────
@@ -1395,480 +1457,295 @@ export default function InsightsSummary() {
       <PageHeader title="Insights & Briefing" description={`Your daily starting point · ${pL} vs ${cL} · ${today}`} />
 
       <div className="p-6 space-y-6">
-        {/* ─── Key Metrics (3-zone, no health score) ─────────────────── */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-          {/* Key Metrics — 4 cards spanning 9 cols */}
-          <div className="lg:col-span-9 grid grid-cols-2 md:grid-cols-4 gap-3">
-            <ClickableKpiCard onClick={() => setKpiDive({ open: true, config: {
-              title: `Disbursed (${pL})`, metric: coreMetrics.mtdDisbursed.toLocaleString("en-IN"),
-              subtitle: `₹${coreMetrics.mtdAmountCr} Cr total disbursal amount`,
-              sections: [
-                { title: "Comparison", type: "kpi-row", kpis: [
-                  { label: pL, value: coreMetrics.mtdDisbursed.toLocaleString("en-IN"), sub: `₹${coreMetrics.mtdAmountCr} Cr` },
-                  { label: cL, value: coreMetrics.lmtdDisbursed.toLocaleString("en-IN") },
-                  { label: "Growth", value: `${coreMetrics.lmtdDisbursed > 0 ? (((coreMetrics.mtdDisbursed - coreMetrics.lmtdDisbursed) / coreMetrics.lmtdDisbursed) * 100).toFixed(1) : 0}%`, color: coreMetrics.mtdDisbursed >= coreMetrics.lmtdDisbursed ? "text-emerald-600" : "text-red-600" },
-                  { label: "ATS", value: `₹${AVG_ATS}L` },
-                ]},
-                { title: "Top Lenders by Disbursal", type: "chart", chart: { type: "bar", data: [...coreMetrics.lenderPerf].sort((a, b) => b.disbCr - a.disbCr).slice(0, 8).map((l) => ({ name: l.lender, value: l.disbCr, color: l.aopPct >= 80 ? "hsl(150,60%,45%)" : "hsl(220,70%,55%)" })), label: "Cr", valueSuffix: " Cr" }},
-                { title: "Lender Breakdown", type: "table", headers: ["Lender", `${pL} Disb`, "₹ Cr", "AOP %", "Growth"], rows: [...coreMetrics.lenderPerf].sort((a, b) => b.disbCr - a.disbCr).slice(0, 8).map((l) => ({ label: l.lender, values: [l.mtdDisbursed?.toLocaleString("en-IN") || "-", `₹${l.disbCr.toFixed(1)}`, `${l.aopPct}%`, `${l.delta > 0 ? "+" : ""}${l.delta.toFixed(1)}pp`] })) },
-              ],
-            }})}>
-              <Card>
-                <CardContent className="p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Banknote className="h-4 w-4 text-emerald-500" />
-                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Disbursed ({pL})</p>
-                  </div>
+        {/* ─── Key Metrics ─────────────────────────────────────────── */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Disbursed Card — click navigates to Disbursal Summary */}
+          <Card className="cursor-pointer hover:ring-2 hover:ring-primary/20 transition-all" onClick={() => router.push("/disbursal-summary")}>
+            <CardContent className="p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <Banknote className="h-4 w-4 text-emerald-500" />
+                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Disbursed ({pL})</p>
+                <ArrowRight className="h-3 w-3 text-muted-foreground ml-auto" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-[10px] text-muted-foreground font-medium mb-1">MTD</p>
                   <p className="text-2xl font-bold tabular-nums">{coreMetrics.mtdDisbursed.toLocaleString("en-IN")}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">₹{coreMetrics.mtdAmountCr} Cr</p>
-                  <div className="flex items-center gap-1 mt-2">
-                    {coreMetrics.mtdDisbursed >= coreMetrics.lmtdDisbursed ? <TrendingUp className="h-3 w-3 text-emerald-600" /> : <TrendingDown className="h-3 w-3 text-red-600" />}
-                    <span className={cn("text-[11px] font-semibold", coreMetrics.mtdDisbursed >= coreMetrics.lmtdDisbursed ? "text-emerald-600" : "text-red-600")}>{coreMetrics.lmtdDisbursed > 0 ? `${(((coreMetrics.mtdDisbursed - coreMetrics.lmtdDisbursed) / coreMetrics.lmtdDisbursed) * 100).toFixed(0)}%` : "-"} vs {cL}</span>
-                  </div>
-                </CardContent>
-              </Card>
-            </ClickableKpiCard>
+                  <p className="text-xs text-muted-foreground">₹{coreMetrics.mtdAmountCr} Cr</p>
+                  <p className="text-xs text-muted-foreground">ATS: ₹{coreMetrics.mtdDisbursed > 0 ? Math.round((coreMetrics.mtdAmountCr * 1e7) / coreMetrics.mtdDisbursed).toLocaleString("en-IN") : "—"}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-muted-foreground font-medium mb-1">LMTD</p>
+                  <p className="text-2xl font-bold tabular-nums">{coreMetrics.lmtdDisbursed.toLocaleString("en-IN")}</p>
+                  <p className="text-xs text-muted-foreground">₹{ACTUAL_LMTD_AMT_CR} Cr</p>
+                  <p className="text-xs text-muted-foreground">ATS: ₹{coreMetrics.lmtdDisbursed > 0 ? Math.round((ACTUAL_LMTD_AMT_CR * 1e7) / coreMetrics.lmtdDisbursed).toLocaleString("en-IN") : "—"}</p>
+                </div>
+              </div>
+              <Separator className="my-3" />
+              <div className="space-y-1">
+                <div className="flex items-center gap-1.5">
+                  {coreMetrics.mtdDisbursed >= coreMetrics.lmtdDisbursed ? <TrendingUp className="h-3 w-3 text-emerald-600" /> : <TrendingDown className="h-3 w-3 text-red-600" />}
+                  <span className={cn("text-xs font-semibold", coreMetrics.mtdDisbursed >= coreMetrics.lmtdDisbursed ? "text-emerald-600" : "text-red-600")}>
+                    Count: {coreMetrics.lmtdDisbursed > 0 ? `${(((coreMetrics.mtdDisbursed - coreMetrics.lmtdDisbursed) / coreMetrics.lmtdDisbursed) * 100).toFixed(1)}%` : "—"} vs {cL}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  {coreMetrics.mtdAmountCr >= ACTUAL_LMTD_AMT_CR ? <TrendingUp className="h-3 w-3 text-emerald-600" /> : <TrendingDown className="h-3 w-3 text-red-600" />}
+                  <span className={cn("text-xs font-semibold", coreMetrics.mtdAmountCr >= ACTUAL_LMTD_AMT_CR ? "text-emerald-600" : "text-red-600")}>
+                    Amt: {ACTUAL_LMTD_AMT_CR > 0 ? `${(((coreMetrics.mtdAmountCr - ACTUAL_LMTD_AMT_CR) / ACTUAL_LMTD_AMT_CR) * 100).toFixed(1)}%` : "—"} vs {cL}
+                  </span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
 
-            <ClickableKpiCard onClick={() => setKpiDive({ open: true, config: {
-              title: "Funnel Conv%", metric: `${coreMetrics.mtdE2E}%`,
-              subtitle: `Workable → Disbursed conversion (${coreMetrics.e2eDelta > 0 ? "+" : ""}${coreMetrics.e2eDelta}pp vs ${cL})`,
-              sections: [
-                { title: "Stage-wise Conversion", type: "chart", chart: { type: "bar", data: coreMetrics.stageDeltas.map((s) => ({ name: s.stage.length > 12 ? s.stage.substring(0, 10) + ".." : s.stage, value: s.mtdConv, color: s.delta >= 0 ? "hsl(150,60%,45%)" : "hsl(350,65%,55%)" })), label: "Conv%", valueSuffix: "%" }},
-                { title: "Stage Details", type: "table", headers: ["Stage", `${pL} Conv%`, `${cL} Conv%`, "Delta"], rows: coreMetrics.stageDeltas.map((s) => ({ label: s.stage, values: [`${s.mtdConv.toFixed(1)}%`, `${s.lmtdConv.toFixed(1)}%`, `${s.delta > 0 ? "+" : ""}${s.delta.toFixed(1)}pp`], highlight: s.delta < -3 })) },
-                { title: "Key Observations", type: "bullets", bullets: [
-                  `${coreMetrics.stageDeltas.filter((s) => s.delta > 1).length} stages improved, ${coreMetrics.stageDeltas.filter((s) => s.delta < -1).length} declined`,
-                  ...coreMetrics.stageDeltas.filter((s) => s.delta < -3).slice(0, 3).map((s) => `⚠ ${s.stage}: ${s.delta.toFixed(1)}pp drop — needs investigation`),
-                ]},
-              ],
-            }})}>
-              <Card>
-                <CardContent className="p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Activity className="h-4 w-4 text-blue-500" />
-                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Funnel Conv%</p>
-                  </div>
-                  <p className="text-2xl font-bold tabular-nums">{coreMetrics.mtdE2E}%</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">Workable → Disbursed</p>
-                  <div className="flex items-center gap-1 mt-2">
-                    {coreMetrics.e2eDelta >= 0 ? <TrendingUp className="h-3 w-3 text-emerald-600" /> : <TrendingDown className="h-3 w-3 text-red-600" />}
-                    <span className={cn("text-[11px] font-semibold", coreMetrics.e2eDelta >= 0 ? "text-emerald-600" : "text-red-600")}>{coreMetrics.e2eDelta > 0 ? "+" : ""}{coreMetrics.e2eDelta}pp vs {cL}</span>
-                  </div>
-                </CardContent>
-              </Card>
-            </ClickableKpiCard>
-
-            <ClickableKpiCard onClick={() => setKpiDive({ open: true, config: {
-              title: "AOP Pacing", metric: `${coreMetrics.aopPacing}%`,
-              subtitle: `₹${coreMetrics.projectedCr} Cr projected vs ₹${coreMetrics.monthlyTarget} Cr monthly target`,
-              sections: [
-                { title: "AOP Summary", type: "kpi-row", kpis: [
-                  { label: "Monthly Target", value: `₹${coreMetrics.monthlyTarget} Cr` },
-                  { label: "Projected", value: `₹${coreMetrics.projectedCr} Cr`, color: coreMetrics.aopPacing >= 100 ? "text-emerald-600" : "text-red-600" },
-                  { label: "Annual AOP", value: `₹${TOTAL_AOP} Cr` },
-                ]},
-                { title: "Lender AOP Pacing", type: "chart", chart: { type: "bar", data: coreMetrics.lenderPerf.filter((l) => l.aopPct > 0).sort((a, b) => a.aopPct - b.aopPct).map((l) => ({ name: l.lender, value: l.aopPct, color: l.aopPct >= 100 ? "hsl(150,60%,45%)" : l.aopPct >= 80 ? "hsl(220,70%,55%)" : l.aopPct >= 50 ? "hsl(40,80%,50%)" : "hsl(350,65%,55%)" })), label: "Pacing", valueSuffix: "%" }},
-                { title: "Lender AOP Detail", type: "table", headers: ["Lender", "AOP (Cr)", `${pL} Run-Rate`, "Pacing %", "Status"], rows: coreMetrics.lenderPerf.filter((l) => l.aopPct > 0).sort((a, b) => a.aopPct - b.aopPct).map((l) => ({ label: l.lender, values: [`₹${(LENDER_AOP[l.lender] || 0)}`, `₹${l.disbCr.toFixed(1)} Cr`, `${l.aopPct}%`, l.aopPct >= 100 ? "✅ On Track" : l.aopPct >= 80 ? "⚠ Monitor" : "🔴 Behind"], highlight: l.aopPct < 60 })) },
-              ],
-            }})}>
-              <Card>
-                <CardContent className="p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Target className="h-4 w-4 text-amber-500" />
-                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">AOP Pacing</p>
-                  </div>
-                  <p className="text-2xl font-bold tabular-nums">{coreMetrics.aopPacing}%</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">₹{coreMetrics.projectedCr} / ₹{coreMetrics.monthlyTarget} Cr</p>
-                  <Progress value={Math.min(coreMetrics.aopPacing, 100)} className="h-1.5 mt-2" />
-                </CardContent>
-              </Card>
-            </ClickableKpiCard>
-
-            <ClickableKpiCard onClick={() => setKpiDive({ open: true, config: {
-              title: "Quick Pulse", metric: `${coreMetrics.stageDeltas.filter((s) => s.delta < -1).length} declining`,
-              subtitle: "Overview of funnel stages and lender performance",
-              sections: [
-                { title: "Summary", type: "kpi-row", kpis: [
-                  { label: "Stages Improving", value: coreMetrics.stageDeltas.filter((s) => s.delta > 1).length, color: "text-emerald-600" },
-                  { label: "Stages Declining", value: coreMetrics.stageDeltas.filter((s) => s.delta < -1).length, color: "text-red-600" },
-                  { label: "Lenders on AOP", value: `${coreMetrics.lenderPerf.filter((l) => l.aopPct >= 80).length}/${coreMetrics.lenderPerf.length}` },
-                  { label: "Open Issues", value: coreMetrics.criticalStages + coreMetrics.criticalLenders, color: "text-amber-600" },
-                ]},
-                { title: "Declining Stages", type: "table", headers: ["Stage", `${pL} Conv%`, `${cL} Conv%`, "Delta (pp)"], rows: coreMetrics.stageDeltas.filter((s) => s.delta < -1).sort((a, b) => a.delta - b.delta).map((s) => ({ label: s.stage, values: [`${s.mtdConv.toFixed(1)}%`, `${s.lmtdConv.toFixed(1)}%`, `${s.delta.toFixed(1)}pp`], highlight: s.delta < -5 })) },
-                { title: "Improving Stages", type: "table", headers: ["Stage", `${pL} Conv%`, `${cL} Conv%`, "Delta (pp)"], rows: coreMetrics.stageDeltas.filter((s) => s.delta > 1).sort((a, b) => b.delta - a.delta).map((s) => ({ label: s.stage, values: [`${s.mtdConv.toFixed(1)}%`, `${s.lmtdConv.toFixed(1)}%`, `+${s.delta.toFixed(1)}pp`] })) },
-                { title: "Lenders Behind AOP (<80%)", type: "table", headers: ["Lender", "AOP Pacing", "Funnel Conv%", "Delta"], rows: coreMetrics.lenderPerf.filter((l) => l.aopPct > 0 && l.aopPct < 80).sort((a, b) => a.aopPct - b.aopPct).map((l) => ({ label: l.lender, values: [`${l.aopPct}%`, `${l.mtdConv.toFixed(1)}%`, `${l.delta > 0 ? "+" : ""}${l.delta.toFixed(1)}pp`], highlight: l.aopPct < 50 })) },
-              ],
-            }})}>
-              <Card>
-                <CardContent className="p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <BarChart3 className="h-4 w-4 text-violet-500" />
-                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Quick Pulse</p>
-                  </div>
-                  <div className="space-y-1.5 mt-1">
-                    <div className="flex items-center justify-between"><span className="text-xs">Stages improving</span><Badge variant="outline" className="text-[9px] bg-emerald-50 text-emerald-700 border-emerald-200">{coreMetrics.stageDeltas.filter((s) => s.delta > 1).length}</Badge></div>
-                    <div className="flex items-center justify-between"><span className="text-xs">Stages declining</span><Badge variant="outline" className="text-[9px] bg-red-50 text-red-700 border-red-200">{coreMetrics.stageDeltas.filter((s) => s.delta < -1).length}</Badge></div>
-                    <div className="flex items-center justify-between"><span className="text-xs">Lenders on AOP</span><Badge variant="outline" className="text-[9px]">{coreMetrics.lenderPerf.filter((l) => l.aopPct >= 80).length}/{coreMetrics.lenderPerf.length}</Badge></div>
-                    <div className="flex items-center justify-between"><span className="text-xs">Open issues</span><Badge variant="outline" className="text-[9px] bg-amber-50 text-amber-700 border-amber-200">{coreMetrics.criticalStages + coreMetrics.criticalLenders}</Badge></div>
-                  </div>
-                </CardContent>
-              </Card>
-            </ClickableKpiCard>
-          </div>
-
-          {/* Lender Disbursal Chart */}
-          <Card className="lg:col-span-3 overflow-hidden">
-            <CardContent className="p-3">
-              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Lender Disbursal (Cr)</p>
-              <ResponsiveContainer width="100%" height={170}>
-                <BarChart data={[...coreMetrics.lenderPerf].sort((a, b) => b.disbCr - a.disbCr).slice(0, 8)} margin={{ top: 10, right: 10, left: -5, bottom: 0 }}>
-                  <XAxis dataKey="lender" tick={{ fontSize: 8 }} tickLine={false} axisLine={false} />
-                  <YAxis tick={{ fontSize: 9 }} tickLine={false} axisLine={false} width={35} />
-                  <Tooltip contentStyle={{ fontSize: 11 }} />
-                  <Bar dataKey="disbCr" radius={[4, 4, 0, 0]} barSize={20} cursor="pointer"
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    onClick={(data: any) => { if (data?.lender) navigateWithFilter("/disbursal-summary", { lender: data.lender }); }}>
-                    {[...coreMetrics.lenderPerf].sort((a, b) => b.disbCr - a.disbCr).slice(0, 8).map((entry, idx) => (
-                      <Cell key={idx} fill={entry.aopPct >= 80 ? "hsl(150, 60%, 45%)" : entry.aopPct >= 60 ? "hsl(220, 70%, 55%)" : "hsl(350, 65%, 55%)"} fillOpacity={0.8} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+          {/* Funnel Conv% Card — click navigates to Funnel Summary */}
+          <Card className="cursor-pointer hover:ring-2 hover:ring-primary/20 transition-all" onClick={() => router.push("/funnel-summary")}>
+            <CardContent className="p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <Activity className="h-4 w-4 text-blue-500" />
+                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Funnel Conv%</p>
+                <ArrowRight className="h-3 w-3 text-muted-foreground ml-auto" />
+              </div>
+              <p className="text-2xl font-bold tabular-nums">{coreMetrics.mtdE2E}%</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Workable → Disbursed</p>
+              <div className="flex items-center gap-1 mt-2 mb-3">
+                {coreMetrics.e2eDelta >= 0 ? <TrendingUp className="h-3 w-3 text-emerald-600" /> : <TrendingDown className="h-3 w-3 text-red-600" />}
+                <span className={cn("text-xs font-semibold", coreMetrics.e2eDelta >= 0 ? "text-emerald-600" : "text-red-600")}>{coreMetrics.e2eDelta > 0 ? "+" : ""}{coreMetrics.e2eDelta}pp vs {cL}</span>
+              </div>
+              <Separator className="my-2" />
+              <div className="space-y-1.5 mt-2">
+                {coreMetrics.funnelInsights.worstCombos[0] && (
+                  <p className="text-[11px] text-red-600"><span className="font-semibold">Worst:</span> {coreMetrics.funnelInsights.worstCombos[0].lender} × {coreMetrics.funnelInsights.worstCombos[0].stage} ({coreMetrics.funnelInsights.worstCombos[0].delta.toFixed(1)}pp)</p>
+                )}
+                {coreMetrics.funnelInsights.bestCombos[0] && (
+                  <p className="text-[11px] text-emerald-600"><span className="font-semibold">Best:</span> {coreMetrics.funnelInsights.bestCombos[0].lender} × {coreMetrics.funnelInsights.bestCombos[0].stage} (+{coreMetrics.funnelInsights.bestCombos[0].delta.toFixed(1)}pp)</p>
+                )}
+                {coreMetrics.funnelInsights.totalLeakageCr > 0 && (
+                  <p className="text-[11px] text-red-700 font-semibold">Est. leakage: ~₹{coreMetrics.funnelInsights.totalLeakageCr} Cr</p>
+                )}
+                {coreMetrics.funnelInsights.focusAreas.slice(0, 2).map((a, i) => (
+                  <p key={i} className="text-[10px] text-muted-foreground">→ {a}</p>
+                ))}
+              </div>
             </CardContent>
           </Card>
         </div>
 
         <Separator />
 
-        {/* ─── Tickets counter ──────────────────────────────────────────── */}
-        {tickets.length > 0 && (
-          <div className="flex items-center gap-2">
-            <Badge className="bg-violet-100 text-violet-700 border-violet-200 text-[10px]">
-              <Ticket className="h-3 w-3 mr-1" />
-              {tickets.length} ticket{tickets.length > 1 ? "s" : ""} created this session
-            </Badge>
-          </div>
-        )}
-
-        {/* ─── Priority Sections ───────────────────────────────────────── */}
-        <div>
-          <div className="flex items-center gap-0 border-b border-border mb-4 overflow-x-auto">
-            {PRIORITY_SECTIONS.map((sec) => {
-              const count = bucketedItems[sec.key].length;
-              const SectionIcon = sec.icon;
-              return (
-                <button
-                  key={sec.key}
-                  className={cn(
-                    "flex items-center gap-1.5 px-4 py-2 text-xs font-semibold transition-colors border-b-2 -mb-px whitespace-nowrap cursor-pointer",
-                    activePriorityTab === sec.key
-                      ? `${sec.border} ${sec.color} ${sec.bg}`
-                      : "border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/30"
-                  )}
-                  onClick={() => setActivePriorityTab(sec.key)}
-                >
-                  <SectionIcon className="h-3.5 w-3.5" />
-                  {sec.label}
-                  {count > 0 && (
-                    <Badge variant="outline" className={cn("text-[8px] ml-0.5 px-1", activePriorityTab === sec.key ? sec.badge : "")}>
-                      {count}
-                    </Badge>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Active section content */}
-          {(() => {
-            const activeItems = bucketedItems[activePriorityTab];
-            const activeSec = PRIORITY_SECTIONS.find((s) => s.key === activePriorityTab)!;
-            if (activeItems.length === 0) {
-              return (
-                <Card className="border-border">
-                  <CardContent className="py-8 text-center">
-                    <CheckCircle2 className="h-6 w-6 text-emerald-500 mx-auto mb-2" />
-                    <p className="text-sm font-medium">No items in {activeSec.label}</p>
-                    <p className="text-xs text-muted-foreground mt-1">Check other priority levels for insights.</p>
-                  </CardContent>
-                </Card>
-              );
-            }
-            return (
-              <div>
-                <p className="text-[11px] text-muted-foreground mb-3">
-                  {activePriorityTab === "P0" && "Revenue-impacting issues requiring immediate action. Click to expand for drill-down."}
-                  {activePriorityTab === "P1" && "Significant issues that should be addressed this sprint."}
-                  {activePriorityTab === "P2" && "Medium-priority items to address this week."}
-                  {activePriorityTab === "P3" && "Lower-priority items to monitor. No immediate action required."}
-                  {activePriorityTab === "emerging" && "Issues appearing for the first time that may grow if not addressed."}
-                  {activePriorityTab === "positive" && "Positive signals and improvements across the funnel."}
-                </p>
-                <div className="space-y-2">
-                  {activeItems.map((item) => renderInsightCard(item))}
-                </div>
-              </div>
-            );
-          })()}
-        </div>
-
-        <Separator />
-
-        {/* ─── Recommended Actions ─────────────────────────────────────── */}
+        {/* ─── Merchant Clickstream Analysis ───────────────────────────── */}
         <div>
           <h2 className="text-sm font-semibold flex items-center gap-2 mb-1">
             <Zap className="h-4 w-4 text-violet-500" />
-            Recommended Actions
+            Merchant Clickstream Analysis
           </h2>
-          <p className="text-[10px] text-muted-foreground mb-3">Click any action to navigate with relevant filters applied.</p>
+          <p className="text-[10px] text-muted-foreground mb-4">User journey diagnostics — latency, drops, errors & middleware health</p>
 
-          {actionItems.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+            {/* 1. Latency Insights */}
             <Card>
-              <CardContent className="p-0">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="bg-muted/50">
-                      <TableHead className="text-[10px] font-semibold w-[70px]">Priority</TableHead>
-                      <TableHead className="text-[10px] font-semibold">Action</TableHead>
-                      <TableHead className="text-[10px] font-semibold w-[80px]">Owner</TableHead>
-                      <TableHead className="text-[10px] font-semibold w-[140px]">Navigate</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {actionItems.map((item, i) => (
-                      <TableRow key={i} className="hover:bg-muted/20 cursor-pointer" onClick={() => navigateWithFilter(item.href, item.filter)}>
-                        <TableCell className="py-2">
-                          <Badge variant="outline" className={cn("text-[8px] font-bold px-1.5", item.priority === "high" ? "bg-red-50 text-red-700 border-red-200" : item.priority === "medium" ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-gray-50 text-gray-600 border-gray-200")}>
-                            {item.priority.toUpperCase()}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-xs py-2 leading-relaxed">{item.action}</TableCell>
-                        <TableCell className="text-xs py-2 text-muted-foreground">{item.owner}</TableCell>
-                        <TableCell className="py-2">
-                          <span className="flex items-center gap-1 text-[10px] text-blue-600 font-medium">
-                            {item.tab} <ArrowRight className="h-3 w-3" />
-                          </span>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
-          ) : (
-            <Card><CardContent className="py-8 text-center">
-              <CheckCircle2 className="h-6 w-6 text-emerald-500 mx-auto mb-2" />
-              <p className="text-sm font-medium">No urgent actions needed</p>
-              <p className="text-xs text-muted-foreground mt-1">All metrics are within acceptable ranges</p>
-            </CardContent></Card>
-          )}
-        </div>
-
-        <Separator />
-
-        {/* ─── Lender & Program Scorecards (side-by-side) ────────────── */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {/* Lender Scorecard */}
-          <div>
-            <h2 className="text-sm font-semibold flex items-center gap-2 mb-1">
-              <BarChart3 className="h-4 w-4 text-muted-foreground" />
-              Lender Scorecard
-            </h2>
-            <p className="text-[10px] text-muted-foreground mb-3">Click any row to navigate.</p>
-            <Card>
-              <CardContent className="p-0">
-                <div className="overflow-x-auto max-h-[400px]">
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="bg-muted/50">
-                        <TableHead className="text-[10px] font-semibold">Lender</TableHead>
-                        <TableHead className="text-[10px] font-semibold text-right">₹ Cr</TableHead>
-                        <TableHead className="text-[10px] font-semibold text-right">Conv%</TableHead>
-                        <TableHead className="text-[10px] font-semibold text-right">Δ</TableHead>
-                        <TableHead className="text-[10px] font-semibold text-center">AOP</TableHead>
-                        <TableHead className="text-[10px] font-semibold text-center">Status</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {[...coreMetrics.lenderPerf].sort((a, b) => b.disbCr - a.disbCr).map((l) => {
-                        const isBad = l.delta < -3 || (l.aopPct > 0 && l.aopPct < 60);
-                        const isWarn = l.delta < 0 || (l.aopPct > 0 && l.aopPct < 80);
-                        const isGood = l.delta >= 0 && l.aopPct >= 80;
-                        return (
-                          <TableRow key={l.lender} className="hover:bg-muted/20 cursor-pointer" onClick={() => navigateWithFilter("/funnel-summary", { lender: l.lender }, "lender-kpis")}>
-                            <TableCell className="text-xs font-semibold py-1.5">{l.lender}</TableCell>
-                            <TableCell className="text-xs text-right tabular-nums font-medium py-1.5">₹{l.disbCr}</TableCell>
-                            <TableCell className="text-xs text-right tabular-nums py-1.5">{l.mtdConv}%</TableCell>
-                            <TableCell className="text-right py-1.5">
-                              <span className={cn("text-[10px] font-bold", l.delta > 0 ? "text-emerald-600" : l.delta < 0 ? "text-red-600" : "text-muted-foreground")}>{l.delta > 0 ? "+" : ""}{l.delta}pp</span>
-                            </TableCell>
-                            <TableCell className="py-1.5">{l.aopPct > 0 ? <div className="flex items-center gap-1 justify-center"><Progress value={Math.min(l.aopPct, 100)} className="h-1 w-10" /><span className="text-[8px] tabular-nums font-medium">{l.aopPct}%</span></div> : <span className="text-[8px] text-muted-foreground">-</span>}</TableCell>
-                            <TableCell className="text-center py-1.5">
-                              {isBad ? <Badge variant="outline" className="text-[7px] bg-red-50 text-red-700 border-red-200 px-1">Risk</Badge> : isWarn ? <Badge variant="outline" className="text-[7px] bg-amber-50 text-amber-700 border-amber-200 px-1">Watch</Badge> : isGood ? <Badge variant="outline" className="text-[7px] bg-emerald-50 text-emerald-700 border-emerald-200 px-1">OK</Badge> : <Badge variant="outline" className="text-[7px] px-1">-</Badge>}
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
+              <CardContent className="p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-[10px] font-bold shrink-0">1</span>
+                  <p className="text-xs font-semibold">Latency: Lead Created → MP Screen</p>
                 </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Program Type Scorecard */}
-          <div>
-            <h2 className="text-sm font-semibold flex items-center gap-2 mb-1">
-              <BarChart3 className="h-4 w-4 text-muted-foreground" />
-              Program Type Scorecard
-            </h2>
-            <p className="text-[10px] text-muted-foreground mb-3">Click any row to navigate.</p>
-            <Card>
-              <CardContent className="p-0">
-                <div className="overflow-x-auto max-h-[400px]">
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="bg-muted/50">
-                        <TableHead className="text-[10px] font-semibold">Program</TableHead>
-                        <TableHead className="text-[10px] font-semibold text-right">₹ Cr</TableHead>
-                        <TableHead className="text-[10px] font-semibold text-right">Conv%</TableHead>
-                        <TableHead className="text-[10px] font-semibold text-right">Δ</TableHead>
-                        <TableHead className="text-[10px] font-semibold text-right">Vol%</TableHead>
-                        <TableHead className="text-[10px] font-semibold text-center">Status</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {[...coreMetrics.programPerf].sort((a, b) => b.disbCr - a.disbCr).map((p) => {
-                        const isBad = p.delta < -3;
-                        const isWarn = p.delta < 0;
-                        const isGood = p.delta >= 0;
-                        return (
-                          <TableRow key={p.program} className="hover:bg-muted/20 cursor-pointer" onClick={() => navigateWithFilter("/funnel-summary", { productType: p.program })}>
-                            <TableCell className="text-xs font-semibold py-1.5">{p.program}</TableCell>
-                            <TableCell className="text-xs text-right tabular-nums font-medium py-1.5">₹{p.disbCr}</TableCell>
-                            <TableCell className="text-xs text-right tabular-nums py-1.5">{p.mtdConv}%</TableCell>
-                            <TableCell className="text-right py-1.5">
-                              <span className={cn("text-[10px] font-bold", p.delta > 0 ? "text-emerald-600" : p.delta < 0 ? "text-red-600" : "text-muted-foreground")}>{p.delta > 0 ? "+" : ""}{p.delta}pp</span>
-                            </TableCell>
-                            <TableCell className="text-right py-1.5">
-                              <span className={cn("text-[10px] font-bold", p.volumeGrowth > 0 ? "text-emerald-600" : p.volumeGrowth < 0 ? "text-red-600" : "text-muted-foreground")}>{p.volumeGrowth > 0 ? "+" : ""}{p.volumeGrowth}%</span>
-                            </TableCell>
-                            <TableCell className="text-center py-1.5">
-                              {isBad ? <Badge variant="outline" className="text-[7px] bg-red-50 text-red-700 border-red-200 px-1">Risk</Badge> : isWarn ? <Badge variant="outline" className="text-[7px] bg-amber-50 text-amber-700 border-amber-200 px-1">Watch</Badge> : isGood ? <Badge variant="outline" className="text-[7px] bg-emerald-50 text-emerald-700 border-emerald-200 px-1">OK</Badge> : <Badge variant="outline" className="text-[7px] px-1">-</Badge>}
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-
-        <Separator />
-
-        {/* ─── Program × Lender Cross Table ───────────────────────────── */}
-        <div>
-          <h2 className="text-sm font-semibold flex items-center gap-2 mb-1">
-            <BarChart3 className="h-4 w-4 text-muted-foreground" />
-            Program × Lender — Disbursal (Cr)
-          </h2>
-          <p className="text-[10px] text-muted-foreground mb-3">Cross-view showing ₹ Cr disbursed by each program × lender combination. Click a cell to apply both filters.</p>
-          {(() => {
-            const lenders = [...coreMetrics.lenderPerf].sort((a, b) => b.disbCr - a.disbCr).map((l) => l.lender);
-            const programs = [...coreMetrics.programPerf].sort((a, b) => b.disbCr - a.disbCr).map((p) => p.program);
-            // Build cross-map from raw filtered data
-            const crossMap: Record<string, Record<string, number>> = {};
-            filteredL2.filter((r) => r.month_start === "1.MTD" && !r.sub_stage && Math.floor(r.major_index) === r.major_index && r.major_index === coreMetrics.allIndices[coreMetrics.allIndices.length - 1]).forEach((r) => {
-              if (!crossMap[r.product_type]) crossMap[r.product_type] = {};
-              crossMap[r.product_type][r.lender] = (crossMap[r.product_type][r.lender] || 0) + r.leads;
-            });
-            return (
-              <Card>
-                <CardContent className="p-0">
-                  <div className="overflow-x-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow className="bg-muted/50">
-                          <TableHead className="text-[10px] font-semibold sticky left-0 bg-muted/50 z-10">Program \ Lender</TableHead>
-                          {lenders.map((l) => (
-                            <TableHead key={l} className="text-[9px] font-semibold text-center px-2 min-w-[65px]">{l}</TableHead>
-                          ))}
-                          <TableHead className="text-[9px] font-bold text-center px-2 bg-muted/30">Total</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {programs.map((pt) => {
-                          const rowTotal = lenders.reduce((s, l) => s + (crossMap[pt]?.[l] || 0), 0);
-                          return (
-                            <TableRow key={pt} className="hover:bg-muted/20">
-                              <TableCell className="text-[10px] font-semibold py-1.5 sticky left-0 bg-card z-10">{pt}</TableCell>
-                              {lenders.map((l) => {
-                                const val = crossMap[pt]?.[l] || 0;
-                                const crVal = parseFloat((val * AVG_ATS / 100).toFixed(1));
-                                return (
-                                  <TableCell key={l} className="text-center py-1.5 cursor-pointer hover:bg-primary/5" onClick={() => navigateWithFilter("/funnel-summary", { lender: l, productType: pt })}>
-                                    {val > 0 ? (
-                                      <span className="text-[10px] tabular-nums font-medium">{crVal}</span>
-                                    ) : (
-                                      <span className="text-[9px] text-muted-foreground">-</span>
-                                    )}
-                                  </TableCell>
-                                );
-                              })}
-                              <TableCell className="text-center py-1.5 bg-muted/10">
-                                <span className="text-[10px] tabular-nums font-bold">{(rowTotal * AVG_ATS / 100).toFixed(1)}</span>
-                              </TableCell>
-                            </TableRow>
-                          );
-                        })}
-                        {/* Total row */}
-                        <TableRow className="bg-muted/30 font-bold">
-                          <TableCell className="text-[10px] font-bold py-1.5 sticky left-0 bg-muted/30 z-10">Total</TableCell>
-                          {lenders.map((l) => {
-                            const colTotal = programs.reduce((s, pt) => s + (crossMap[pt]?.[l] || 0), 0);
-                            return (
-                              <TableCell key={l} className="text-center py-1.5">
-                                <span className="text-[10px] tabular-nums font-bold">{(colTotal * AVG_ATS / 100).toFixed(1)}</span>
-                              </TableCell>
-                            );
-                          })}
-                          <TableCell className="text-center py-1.5 bg-muted/20">
-                            <span className="text-[10px] tabular-nums font-bold">₹{coreMetrics.mtdAmountCr}</span>
-                          </TableCell>
-                        </TableRow>
-                      </TableBody>
-                    </Table>
+                <div className="grid grid-cols-3 gap-3 mb-3">
+                  <div className="bg-slate-50 rounded-lg p-2 text-center">
+                    <p className="text-lg font-bold tabular-nums text-amber-600">9s</p>
+                    <p className="text-[9px] text-muted-foreground">P90</p>
                   </div>
-                </CardContent>
-              </Card>
-            );
-          })()}
+                  <div className="bg-slate-50 rounded-lg p-2 text-center">
+                    <p className="text-lg font-bold tabular-nums text-amber-600">11s</p>
+                    <p className="text-[9px] text-muted-foreground">P95</p>
+                  </div>
+                  <div className="bg-slate-50 rounded-lg p-2 text-center">
+                    <p className="text-lg font-bold tabular-nums text-red-600">20s</p>
+                    <p className="text-[9px] text-muted-foreground">P99</p>
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px]">Lead Created → Bureau Pull</span>
+                    <span className="text-[11px] tabular-nums font-medium">2.1s</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px]">Bureau Pull → BRE1 Initiation</span>
+                    <span className="text-[11px] tabular-nums font-medium text-amber-600">4.3s</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px]">BRE1 Initiated → MP Screen</span>
+                    <span className="text-[11px] tabular-nums font-medium text-red-600">2.6s</span>
+                  </div>
+                </div>
+                <Separator className="my-2" />
+                <div className="space-y-1">
+                  <p className="text-[10px] text-amber-600">→ Bureau Pull → BRE1 is the slowest leg (4.3s) — BRE rule evaluation latency spiked 22% vs LMTD</p>
+                  <p className="text-[10px] text-red-600">→ P99 at 20s — tail latency driven by retries on bureau timeouts; ~6% of users impacted</p>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* 2. KYC Selfie Drop Analysis */}
+            <Card>
+              <CardContent className="p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="w-6 h-6 rounded-full bg-red-100 text-red-700 flex items-center justify-center text-[10px] font-bold shrink-0">2</span>
+                  <p className="text-xs font-semibold">KYC Selfie Drop Analysis</p>
+                </div>
+                <div className="grid grid-cols-3 gap-3 mb-3">
+                  <div className="bg-slate-50 rounded-lg p-2 text-center">
+                    <p className="text-lg font-bold tabular-nums">82.4%</p>
+                    <p className="text-[9px] text-muted-foreground">Selfie Success</p>
+                  </div>
+                  <div className="bg-slate-50 rounded-lg p-2 text-center">
+                    <p className="text-lg font-bold tabular-nums text-red-600">11.2%</p>
+                    <p className="text-[9px] text-muted-foreground">Selfie Failures</p>
+                  </div>
+                  <div className="bg-slate-50 rounded-lg p-2 text-center">
+                    <p className="text-lg font-bold tabular-nums text-amber-600">6.4%</p>
+                    <p className="text-[9px] text-muted-foreground">User Drops</p>
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px]">Camera permission denied</span>
+                    <span className="text-[11px] tabular-nums font-medium text-red-600">3.8%</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px]">Liveness check failed</span>
+                    <span className="text-[11px] tabular-nums font-medium text-red-600">4.1%</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px]">Face mismatch with Aadhaar</span>
+                    <span className="text-[11px] tabular-nums font-medium text-amber-600">2.6%</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px]">Timeout / network error</span>
+                    <span className="text-[11px] tabular-nums font-medium">0.7%</span>
+                  </div>
+                </div>
+                <Separator className="my-2" />
+                <div className="space-y-1">
+                  <p className="text-[10px] text-red-600">→ Liveness check failure rate up 1.5pp vs LMTD — impacting ~4,600 leads</p>
+                  <p className="text-[10px] text-muted-foreground">→ Android &gt; iOS failure rate by 2.3x; low-light conditions a key factor</p>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* 3. SWW (Something Went Wrong) Error Analysis */}
+            <Card>
+              <CardContent className="p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="w-6 h-6 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center text-[10px] font-bold shrink-0">3</span>
+                  <p className="text-xs font-semibold">SWW Error Analysis</p>
+                </div>
+                <div className="grid grid-cols-3 gap-3 mb-3">
+                  <div className="bg-slate-50 rounded-lg p-2 text-center">
+                    <p className="text-lg font-bold tabular-nums text-red-600">2.8%</p>
+                    <p className="text-[9px] text-muted-foreground">Lead Creation</p>
+                  </div>
+                  <div className="bg-slate-50 rounded-lg p-2 text-center">
+                    <p className="text-lg font-bold tabular-nums text-amber-600">1.9%</p>
+                    <p className="text-[9px] text-muted-foreground">Review Screen</p>
+                  </div>
+                  <div className="bg-slate-50 rounded-lg p-2 text-center">
+                    <p className="text-lg font-bold tabular-nums text-amber-600">3.4%</p>
+                    <p className="text-[9px] text-muted-foreground">MP Screen</p>
+                  </div>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-[11px]">
+                    <thead>
+                      <tr className="border-b">
+                        <th className="text-left py-1 font-semibold text-muted-foreground">Screen</th>
+                        <th className="text-right py-1 font-semibold text-muted-foreground">MTD</th>
+                        <th className="text-right py-1 font-semibold text-muted-foreground">LMTD</th>
+                        <th className="text-right py-1 font-semibold text-muted-foreground">Δ</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr className="border-b border-dashed">
+                        <td className="py-1">Lead Creation</td>
+                        <td className="text-right tabular-nums">2.8%</td>
+                        <td className="text-right tabular-nums">2.1%</td>
+                        <td className="text-right tabular-nums text-red-600 font-semibold">+0.7pp</td>
+                      </tr>
+                      <tr className="border-b border-dashed">
+                        <td className="py-1">Review Screen</td>
+                        <td className="text-right tabular-nums">1.9%</td>
+                        <td className="text-right tabular-nums">1.7%</td>
+                        <td className="text-right tabular-nums text-amber-600 font-semibold">+0.2pp</td>
+                      </tr>
+                      <tr>
+                        <td className="py-1">MP Screen</td>
+                        <td className="text-right tabular-nums">3.4%</td>
+                        <td className="text-right tabular-nums">2.5%</td>
+                        <td className="text-right tabular-nums text-red-600 font-semibold">+0.9pp</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <Separator className="my-2" />
+                <div className="space-y-1">
+                  <p className="text-[10px] text-red-600">→ MP Screen SWW rate spiked +0.9pp — primarily timeout errors from LIS API</p>
+                  <p className="text-[10px] text-muted-foreground">→ Lead Creation errors correlated with burst traffic during 10AM–12PM window</p>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* 4. Middleware Errors */}
+            <Card>
+              <CardContent className="p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="w-6 h-6 rounded-full bg-violet-100 text-violet-700 flex items-center justify-center text-[10px] font-bold shrink-0">4</span>
+                  <p className="text-xs font-semibold">Middleware Errors — LO, FE, LIS, Pricing, OE</p>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-[11px]">
+                    <thead>
+                      <tr className="border-b">
+                        <th className="text-left py-1 font-semibold text-muted-foreground">Service</th>
+                        <th className="text-right py-1 font-semibold text-muted-foreground">Error %</th>
+                        <th className="text-right py-1 font-semibold text-muted-foreground">5xx</th>
+                        <th className="text-right py-1 font-semibold text-muted-foreground">Timeout</th>
+                        <th className="text-right py-1 font-semibold text-muted-foreground">P99 (ms)</th>
+                        <th className="text-right py-1 font-semibold text-muted-foreground">Trend</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[
+                        { svc: "LO (Lending Orchestrator)", err: "1.2%", fivexx: "0.8%", timeout: "0.4%", p99: "580", trend: "+0.3pp", bad: false },
+                        { svc: "FE (Front-end)", err: "0.6%", fivexx: "0.2%", timeout: "0.4%", p99: "340", trend: "-0.1pp", bad: false },
+                        { svc: "LIS (Lender Integration Service)", err: "3.1%", fivexx: "1.8%", timeout: "1.3%", p99: "1820", trend: "+1.4pp", bad: true },
+                        { svc: "Pricing", err: "0.9%", fivexx: "0.3%", timeout: "0.6%", p99: "450", trend: "+0.2pp", bad: false },
+                        { svc: "OE (Onboarding Engine)", err: "2.4%", fivexx: "1.1%", timeout: "1.3%", p99: "1240", trend: "+0.8pp", bad: true },
+                      ].map((r) => (
+                        <tr key={r.svc} className={cn("border-b border-dashed", r.bad && "bg-red-50/50")}>
+                          <td className="py-1.5 font-medium">{r.svc}</td>
+                          <td className={cn("text-right tabular-nums", r.bad ? "text-red-600 font-semibold" : "")}>{r.err}</td>
+                          <td className="text-right tabular-nums">{r.fivexx}</td>
+                          <td className="text-right tabular-nums">{r.timeout}</td>
+                          <td className={cn("text-right tabular-nums", parseInt(r.p99) > 1000 ? "text-red-600 font-semibold" : "")}>{r.p99}</td>
+                          <td className={cn("text-right tabular-nums font-semibold", r.trend.startsWith("+") ? "text-red-600" : "text-emerald-600")}>{r.trend}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <Separator className="my-2" />
+                <div className="space-y-1">
+                  <p className="text-[10px] text-red-600">→ LIS error rate 3.1% (+1.4pp) — SMFG & Piramal endpoints degraded; P99 at 1.8s</p>
+                  <p className="text-[10px] text-red-600">→ OE timeout spike +0.8pp — onboarding latency impacting MP screen load; P99 at 1.2s</p>
+                  <p className="text-[10px] text-muted-foreground">→ FE & Pricing services healthy — error rates within SLA</p>
+                </div>
+              </CardContent>
+            </Card>
+
+          </div>
         </div>
       </div>
-
-      {/* ─── Modals ──────────────────────────────────────────────────── */}
-      <EmailComposeModal
-        open={emailModal.open}
-        onClose={() => setEmailModal({ open: false, subject: "", body: "" })}
-        defaultSubject={emailModal.subject}
-        defaultBody={emailModal.body}
-      />
-      <CreateTicketModal
-        open={ticketModal.open}
-        onClose={() => setTicketModal({ open: false, title: "", description: "", priority: "P1" })}
-        onSubmit={(ticket) => setTickets((prev) => [...prev, ticket])}
-        defaultTitle={ticketModal.title}
-        defaultDescription={ticketModal.description}
-        defaultPriority={ticketModal.priority}
-      />
-      <InlineFeedbackModal
-        open={feedbackModal.open}
-        onClose={() => setFeedbackModal({ open: false, title: "", detail: "" })}
-        context={{ title: feedbackModal.title, detail: feedbackModal.detail, page: "Insights & Briefing" }}
-      />
-      <KpiDeepDiveModal open={kpiDive.open} onClose={() => setKpiDive({ open: false, config: null })} config={kpiDive.config} />
     </div>
   );
 }

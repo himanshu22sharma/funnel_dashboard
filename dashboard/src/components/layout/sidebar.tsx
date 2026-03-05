@@ -4,11 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
-  LayoutDashboard,
   Filter,
   Banknote,
-  Wrench,
-  Bell,
   Sparkles,
   MessageSquarePlus,
   Headphones,
@@ -24,11 +21,6 @@ const navItems = [
     icon: Sparkles,
   },
   {
-    label: "Executive Summary",
-    href: "/executive-summary",
-    icon: LayoutDashboard,
-  },
-  {
     label: "Funnel Summary",
     href: "/funnel-summary",
     icon: Filter,
@@ -37,21 +29,6 @@ const navItems = [
     label: "Disbursal Summary",
     href: "/disbursal-summary",
     icon: Banknote,
-  },
-  {
-    label: "Alert Tracking",
-    href: "/alert-tracking",
-    icon: Bell,
-  },
-  {
-    label: "RCA & Fix Tracking",
-    href: "/stage-health",
-    icon: Wrench,
-  },
-  {
-    label: "MHD & Channels",
-    href: "/mhd",
-    icon: Headphones,
   },
   {
     label: "Feedback & Changes",
