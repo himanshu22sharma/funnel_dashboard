@@ -310,7 +310,7 @@ export function StageDetailContent({
   const [tabHint, setTabHint] = useState(false);
   const [insightHint, setInsightHint] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
-  const [expandedBuckets, setExpandedBuckets] = useState<Set<SeverityBucket>>(new Set(["p0"]));
+  const [expandedBuckets, setExpandedBuckets] = useState<Set<SeverityBucket>>(new Set());
   const [lenderGuideOpen, setLenderGuideOpen] = useState(false);
   const [expandedLenderCats, setExpandedLenderCats] = useState<Set<string>>(new Set(["hero", "concern"]));
   const [l2GuideOpen, setL2GuideOpen] = useState(false);
@@ -440,7 +440,7 @@ export function StageDetailContent({
   const whyStyle = WHY_STYLE[whyType];
   const urgStyle = URGENCY_STYLE[urgency];
   const isRegression = whyType === "Product" || whyType === "Tech";
-  const [narrativesOpen, setNarrativesOpen] = useState(isRegression);
+  const [narrativesOpen, setNarrativesOpen] = useState(true);
 
   // ── C3: Narrative section content derivations ──────────────
   const leadDrop = stage.lmtdLeads > 0 ? stage.lmtdLeads - stage.leads : 0;
@@ -501,7 +501,42 @@ export function StageDetailContent({
         )}
       </div>
 
-      {/* ── C3: Narrative Sections ────────────────────────────── */}
+      {/* ── Overall KPIs (top) ───────────────────────────────────── */}
+      <div data-tour="stage-kpis">
+        <h4 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+          Overall
+        </h4>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="rounded-lg border bg-muted/20 p-3 text-center">
+            <p className="text-[10px] text-muted-foreground uppercase">MTD count</p>
+            <p className="text-lg font-bold tabular-nums">{stage.leads.toLocaleString("en-IN")}</p>
+          </div>
+          <div className="rounded-lg border bg-muted/20 p-3 text-center">
+            <p className="text-[10px] text-muted-foreground uppercase">{compareLabel} count</p>
+            <p className="text-lg font-bold tabular-nums">{stage.lmtdLeads.toLocaleString("en-IN")}</p>
+          </div>
+          <div className="rounded-lg border bg-muted/20 p-3 text-center">
+            <p className="text-[10px] text-muted-foreground uppercase">Count diff %</p>
+            <p className={cn(
+              "text-lg font-bold tabular-nums",
+              volumeChangePct != null && volumeChangePct < 0 ? "text-red-600" : volumeChangePct != null && volumeChangePct > 0 ? "text-emerald-600" : "text-foreground"
+            )}>
+              {volumeChangePct != null ? `${volumeChangePct >= 0 ? "+" : ""}${volumeChangePct}%` : "—"}
+            </p>
+          </div>
+          <div className="rounded-lg border bg-muted/20 p-3 text-center">
+            <p className="text-[10px] text-muted-foreground uppercase">Conv diff (pp)</p>
+            <p className={cn(
+              "text-lg font-bold tabular-nums",
+              stage.deltaPp != null && stage.deltaPp < 0 ? "text-red-600" : stage.deltaPp != null && stage.deltaPp > 0 ? "text-emerald-600" : "text-foreground"
+            )}>
+              {stage.deltaPp != null ? `${stage.deltaPp >= 0 ? "+" : ""}${stage.deltaPp.toFixed(2)}pp` : "—"}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* ── C3: Narrative Sections (Stage diagnosis — expanded by default) ────────────────────────────── */}
       <button
         type="button"
         onClick={() => setNarrativesOpen((v) => !v)}
@@ -589,41 +624,6 @@ export function StageDetailContent({
           </div>
         </div>
       )}
-
-      {/* ── Overall KPIs (always shown) ───────────────────────────── */}
-      <div data-tour="stage-kpis">
-        <h4 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-          Overall
-        </h4>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div className="rounded-lg border bg-muted/20 p-3 text-center">
-            <p className="text-[10px] text-muted-foreground uppercase">MTD count</p>
-            <p className="text-lg font-bold tabular-nums">{stage.leads.toLocaleString("en-IN")}</p>
-          </div>
-          <div className="rounded-lg border bg-muted/20 p-3 text-center">
-            <p className="text-[10px] text-muted-foreground uppercase">{compareLabel} count</p>
-            <p className="text-lg font-bold tabular-nums">{stage.lmtdLeads.toLocaleString("en-IN")}</p>
-          </div>
-          <div className="rounded-lg border bg-muted/20 p-3 text-center">
-            <p className="text-[10px] text-muted-foreground uppercase">Count diff %</p>
-            <p className={cn(
-              "text-lg font-bold tabular-nums",
-              volumeChangePct != null && volumeChangePct < 0 ? "text-red-600" : volumeChangePct != null && volumeChangePct > 0 ? "text-emerald-600" : "text-foreground"
-            )}>
-              {volumeChangePct != null ? `${volumeChangePct >= 0 ? "+" : ""}${volumeChangePct}%` : "—"}
-            </p>
-          </div>
-          <div className="rounded-lg border bg-muted/20 p-3 text-center">
-            <p className="text-[10px] text-muted-foreground uppercase">Conv diff (pp)</p>
-            <p className={cn(
-              "text-lg font-bold tabular-nums",
-              stage.deltaPp != null && stage.deltaPp < 0 ? "text-red-600" : stage.deltaPp != null && stage.deltaPp > 0 ? "text-emerald-600" : "text-foreground"
-            )}>
-              {stage.deltaPp != null ? `${stage.deltaPp >= 0 ? "+" : ""}${stage.deltaPp.toFixed(2)}pp` : "—"}
-            </p>
-          </div>
-        </div>
-      </div>
 
       {/* Tab bar */}
       <div data-tour="stage-tabs" className="flex gap-1 bg-muted/30 rounded-lg p-1">

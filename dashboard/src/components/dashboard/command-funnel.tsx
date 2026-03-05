@@ -1,8 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { Sparkline, generateDailyConvPct } from "./sparkline";
-import { useMemo, useState, useCallback } from "react";
+import { useState } from "react";
 
 export interface CommandFunnelStage {
   index: number;
@@ -15,6 +14,7 @@ export interface CommandFunnelStage {
   isDataAnomaly: boolean;
   wowDeltaPp?: number | null;
   lmtdLeads?: number;
+  lmtdConvPct?: number | null;
 }
 
 interface CommandFunnelProps {
@@ -78,17 +78,6 @@ export function CommandFunnel({
   onStageClick,
 }: CommandFunnelProps) {
   const [autoFocus, setAutoFocus] = useState(false);
-  const [trendPopover, setTrendPopover] = useState<number | null>(null);
-
-  const sparklineData = useMemo(() => {
-    const m = new Map<number, number[]>();
-    stages.forEach((s) => {
-      m.set(s.index, generateDailyConvPct(s.convPct ?? 50, 15, s.deltaPp ?? 0, 0.025));
-    });
-    return m;
-  }, [stages]);
-
-  const closeTrend = useCallback(() => setTrendPopover(null), []);
 
   if (stages.length === 0) {
     return (
@@ -130,16 +119,16 @@ export function CommandFunnel({
       </div>
 
       <div className="flex flex-col gap-0 w-full max-w-4xl mx-auto">
-        {/* Header row */}
+        {/* Header row: Conv %, LMTD count, LMTD conv %, Delta, WoW */}
         <div className="flex items-center gap-2 w-full pl-0 mb-1">
           <div className="w-44 max-w-[11rem] shrink-0" />
           <div className="flex-1 flex justify-center min-w-0" />
-          <div className="w-[56px] shrink-0 text-center text-[9px] font-medium text-muted-foreground uppercase tracking-wider">Trend</div>
           <div className="w-[70px] shrink-0 text-right text-[9px] font-medium text-muted-foreground uppercase tracking-wider">Conv %</div>
           <div className="w-[62px] shrink-0 text-right text-[9px] font-medium text-muted-foreground uppercase tracking-wider">LMTD</div>
+          <div className="w-[70px] shrink-0 text-right text-[9px] font-medium text-muted-foreground uppercase tracking-wider">LMTD conv %</div>
           <div className="w-[62px] shrink-0 text-right text-[9px] font-medium text-muted-foreground uppercase tracking-wider">Δ vs LMTD</div>
           <div className="w-[52px] shrink-0 text-right text-[9px] font-medium text-muted-foreground uppercase tracking-wider" title="Week-over-Week: Change in conversion from last week to this week (last 7 days vs prior 7 days)">
-            WoW <span className="text-[7px] align-super">ⓘ</span>
+            WoW trend <span className="text-[7px] align-super">ⓘ</span>
           </div>
         </div>
         {stages.map((stage, i) => {
@@ -184,9 +173,6 @@ export function CommandFunnel({
           const bandStatus = getBandStatus(stage.index, stage.convPct, deltaPp);
           const band = EXPECTED_BANDS[stage.index];
           const bandStyle = BAND_STYLES[bandStatus];
-
-          const trendData = sparklineData.get(stage.index);
-          const isTrendOpen = trendPopover === stage.index;
 
           return (
             <div key={stage.index} className="relative">
@@ -239,24 +225,6 @@ export function CommandFunnel({
                     </span>
                   </button>
                 </div>
-                {/* Sparkline trend — clickable */}
-                <div className="w-[56px] shrink-0 flex justify-center items-center">
-                  {i > 0 && trendData ? (
-                    <button
-                      type="button"
-                      onClick={() => setTrendPopover(isTrendOpen ? null : stage.index)}
-                      className="rounded hover:bg-muted/40 p-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary cursor-pointer"
-                      title="Click to see 15-day trend"
-                    >
-                      <Sparkline
-                        data={trendData}
-                        width={48}
-                        height={18}
-                        color={deltaPp != null && deltaPp >= 0 ? "#10b981" : "#ef4444"}
-                      />
-                    </button>
-                  ) : <span className="text-[9px] text-muted-foreground">—</span>}
-                </div>
                 {/* Conv % with band status dot */}
                 <button
                   type="button"
@@ -276,6 +244,10 @@ export function CommandFunnel({
                   {stage.lmtdLeads != null && stage.lmtdLeads > 0
                     ? formatCount(stage.lmtdLeads)
                     : "—"}
+                </div>
+                {/* LMTD conv % */}
+                <div className="w-[70px] shrink-0 text-right text-[10px] tabular-nums text-muted-foreground py-1">
+                  {stage.lmtdConvPct != null ? `${stage.lmtdConvPct.toFixed(1)}%` : "—"}
                 </div>
                 {/* Δ vs LMTD */}
                 <button
@@ -317,41 +289,6 @@ export function CommandFunnel({
                   ) : <span className="text-muted-foreground">—</span>}
                 </div>
               </div>
-
-              {/* Trend popover — 15-day chart */}
-              {isTrendOpen && trendData && (
-                <div className="absolute right-[220px] top-0 z-50 bg-card border rounded-lg shadow-lg p-3 w-[260px]">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-[11px] font-semibold text-foreground">{stage.name.replace(/_/g, " ")} — 15-day trend</span>
-                    <button type="button" onClick={closeTrend} className="text-muted-foreground hover:text-foreground text-xs">✕</button>
-                  </div>
-                  <Sparkline
-                    data={trendData}
-                    width={230}
-                    height={60}
-                    color={deltaPp != null && deltaPp >= 0 ? "#10b981" : "#ef4444"}
-                  />
-                  <div className="flex items-center justify-between mt-2 text-[9px] text-muted-foreground">
-                    <span>Day 1</span>
-                    <span className="font-medium text-foreground">{trendData[trendData.length - 1]?.toFixed(1)}% latest</span>
-                    <span>Day 15</span>
-                  </div>
-                  <div className="mt-1.5 grid grid-cols-3 gap-2 text-[9px]">
-                    <div className="text-center">
-                      <div className="text-muted-foreground">Min</div>
-                      <div className="font-semibold tabular-nums">{Math.min(...trendData).toFixed(1)}%</div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-muted-foreground">Max</div>
-                      <div className="font-semibold tabular-nums">{Math.max(...trendData).toFixed(1)}%</div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-muted-foreground">Avg</div>
-                      <div className="font-semibold tabular-nums">{(trendData.reduce((a, b) => a + b, 0) / trendData.length).toFixed(1)}%</div>
-                    </div>
-                  </div>
-                </div>
-              )}
             </div>
           );
         })}

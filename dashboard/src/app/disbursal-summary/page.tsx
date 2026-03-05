@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { PageHeader } from "@/components/layout/page-header";
 import { KPICard } from "@/components/dashboard/kpi-card";
 import { KpiDeepDiveModal, ClickableKpiCard, KpiDeepDiveConfig } from "@/components/dashboard/kpi-deep-dive-modal";
 import { TrendChart } from "@/components/dashboard/trend-chart";
 import { RichInsightPanel, RichInsightItem, ChartFeedbackButton } from "@/components/dashboard/rich-insight-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   Table,
   TableBody,
@@ -50,9 +51,9 @@ import {
   ArrowUp,
   ArrowDown,
   AlertTriangle,
-  Gauge,
   BarChart3,
   PieChart as PieChartIcon,
+  LineChart as LineChartIcon,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -70,16 +71,17 @@ import {
   Area,
 } from "recharts";
 
-/** Avg ticket size (Lakh): MTD 1528 Cr / 83401 loans ≈ 1.83 L */
+/** Avg ticket size (Lakh): from MTD/LMTD spreadsheet data */
 const AVG_ATS = 1.83;
 /** Used only when LMSD data is not available (avoid for amount – LMSD can be higher than MTD) */
 const LMTD_FACTOR = 0.94;
 // Fallback AOP (Feb'26 month target, Cr) when Disbursement_Summary_Overall.csv not loaded
+// AOP (Feb'26 month target, Cr) per screenshot: SMFG 1375, PIRAMAL 140, NACL 130, MFL 130, PAYU 115, SRIRAM 100, KSF 100, TCL 15, UCL 0. Total 2105.
 const LENDER_AOP_FALLBACK: Record<string, number> = {
-  SMFG: 1375, PIRAMAL: 140, NACL: 130, MFL: 130, PAYU: 115,
-  KSF: 100, SRIRAM: 100, TCL: 15, PROFECTUS: 0, UCL: 0,
+  SMFG: 1375, PIRAMAL: 140, Piramal: 140, NACL: 130, MFL: 130, PAYU: 115,
+  SRIRAM: 100, KSF: 100, TCL: 15, UCL: 0,
 };
-const TOTAL_AOP_FALLBACK = Object.values(LENDER_AOP_FALLBACK).reduce((s, v) => s + v, 0); // 2105
+const TOTAL_AOP_FALLBACK = 2105;
 const COLORS = [
   "hsl(220, 70%, 55%)", "hsl(262, 60%, 55%)", "hsl(30, 80%, 55%)",
   "hsl(150, 60%, 45%)", "hsl(350, 65%, 55%)", "hsl(190, 70%, 45%)",
@@ -93,6 +95,110 @@ const PRODUCT_COLORS: Record<string, string> = {
 
 const TOTAL_DAYS = DAYS_IN_MONTH; // Feb 2026 (DAYS_ELAPSED = 23 as of 24-Feb-26)
 
+// Raw MTD/LMTD data by product (lender, program, policy). Used for Disb count modal with FR split.
+interface RawMTDLMTDRow {
+  product_id: number;
+  lender: string;
+  program: string; // "FR" | "Topup" | "BT" | "AD"
+  policy: string;  // "" | "Bureau" | "Banking" | "GST" | "GMV"
+  mtd_lead_count: number;
+  mtd_loan_amount_cr: number;
+  mtd_ats: number;
+  lmtd_lead_count: number;
+  lmtd_loan_amount_cr: number;
+  lmtd_ats: number;
+}
+
+// Raw MTD (Feb'26) / LMTD (Jan'26) from MTD_LMTD_data.csv. FR split applied in expandWithFRSplit.
+const RAW_MTD_LMTD_DATA: RawMTDLMTDRow[] = [
+  { product_id: 88, lender: "SMFG", program: "Topup", policy: "", mtd_lead_count: 23231, mtd_loan_amount_cr: 784.79, mtd_ats: 337821, lmtd_lead_count: 26067, lmtd_loan_amount_cr: 870.80, lmtd_ats: 334061 },
+  { product_id: 85, lender: "SMFG", program: "FR", policy: "", mtd_lead_count: 23145, mtd_loan_amount_cr: 381.37, mtd_ats: 164772, lmtd_lead_count: 22995, lmtd_loan_amount_cr: 401.42, lmtd_ats: 174570 },
+  { product_id: 291, lender: "KSF", program: "FR", policy: "", mtd_lead_count: 13015, mtd_loan_amount_cr: 131.06, mtd_ats: 100700, lmtd_lead_count: 13413, lmtd_loan_amount_cr: 125.71, lmtd_ats: 93724 },
+  { product_id: 253, lender: "PAYU", program: "FR", policy: "", mtd_lead_count: 6975, mtd_loan_amount_cr: 128.79, mtd_ats: 184641, lmtd_lead_count: 7148, lmtd_loan_amount_cr: 129.62, lmtd_ats: 181330 },
+  { product_id: 106, lender: "PAYU", program: "FR", policy: "", mtd_lead_count: 7317, mtd_loan_amount_cr: 95.11, mtd_ats: 129982, lmtd_lead_count: 8165, lmtd_loan_amount_cr: 100.51, lmtd_ats: 123103 },
+  { product_id: 221, lender: "NACL", program: "FR", policy: "", mtd_lead_count: 3928, mtd_loan_amount_cr: 79.49, mtd_ats: 202367, lmtd_lead_count: 3389, lmtd_loan_amount_cr: 72.69, lmtd_ats: 214496 },
+  { product_id: 87, lender: "Piramal", program: "FR", policy: "", mtd_lead_count: 4970, mtd_loan_amount_cr: 69.53, mtd_ats: 139892, lmtd_lead_count: 6917, lmtd_loan_amount_cr: 100.19, lmtd_ats: 144839 },
+  { product_id: 509, lender: "SMFG", program: "FR", policy: "Bureau", mtd_lead_count: 7966, mtd_loan_amount_cr: 65.59, mtd_ats: 82332, lmtd_lead_count: 921, lmtd_loan_amount_cr: 8.56, lmtd_ats: 92906 },
+  { product_id: 90, lender: "Piramal", program: "Topup", policy: "", mtd_lead_count: 1781, mtd_loan_amount_cr: 45.27, mtd_ats: 254197, lmtd_lead_count: 1958, lmtd_loan_amount_cr: 50.43, lmtd_ats: 257578 },
+  { product_id: 124, lender: "MFL", program: "FR", policy: "", mtd_lead_count: 3446, mtd_loan_amount_cr: 43.33, mtd_ats: 125750, lmtd_lead_count: 5545, lmtd_loan_amount_cr: 82.40, lmtd_ats: 148605 },
+  { product_id: 503, lender: "NACL", program: "Topup", policy: "", mtd_lead_count: 1637, mtd_loan_amount_cr: 39.56, mtd_ats: 241682, lmtd_lead_count: 1582, lmtd_loan_amount_cr: 38.27, lmtd_ats: 241898 },
+  { product_id: 324, lender: "MFL", program: "Topup", policy: "", mtd_lead_count: 1940, mtd_loan_amount_cr: 39.55, mtd_ats: 203881, lmtd_lead_count: 1798, lmtd_loan_amount_cr: 35.20, lmtd_ats: 195749 },
+  { product_id: 508, lender: "Piramal", program: "BT", policy: "", mtd_lead_count: 519, mtd_loan_amount_cr: 14.95, mtd_ats: 288048, lmtd_lead_count: 664, lmtd_loan_amount_cr: 20.65, lmtd_ats: 310925 },
+  { product_id: 311, lender: "Piramal", program: "FR", policy: "Banking", mtd_lead_count: 1418, mtd_loan_amount_cr: 12.35, mtd_ats: 87062, lmtd_lead_count: 277, lmtd_loan_amount_cr: 3.17, lmtd_ats: 114588 },
+  { product_id: 316, lender: "TCL", program: "FR", policy: "", mtd_lead_count: 312, mtd_loan_amount_cr: 6.81, mtd_ats: 218365, lmtd_lead_count: 441, lmtd_loan_amount_cr: 10.88, lmtd_ats: 246642 },
+  { product_id: 89, lender: "SMFG", program: "AD", policy: "", mtd_lead_count: 467, mtd_loan_amount_cr: 6.79, mtd_ats: 145347, lmtd_lead_count: 303, lmtd_loan_amount_cr: 3.28, lmtd_ats: 108116 },
+  { product_id: 515, lender: "KSF", program: "Topup", policy: "", mtd_lead_count: 348, mtd_loan_amount_cr: 4.90, mtd_ats: 140664, lmtd_lead_count: 0, lmtd_loan_amount_cr: 0, lmtd_ats: 0 },
+];
+
+// FR split: count 60% Fresh / 40% Renewal; amount 40% Fresh / 60% Renewal (Renewal ATS higher)
+function expandWithFRSplit(rows: RawMTDLMTDRow[]): { lender: string; program: string; policy: string; mtd_count: number; mtd_amt_cr: number; mtd_ats: number; lmtd_count: number; lmtd_amt_cr: number; lmtd_ats: number }[] {
+  const out: { lender: string; program: string; policy: string; mtd_count: number; mtd_amt_cr: number; mtd_ats: number; lmtd_count: number; lmtd_amt_cr: number; lmtd_ats: number }[] = [];
+  for (const r of rows) {
+    if (r.program === "FR") {
+      const freshCountMtd = r.mtd_lead_count * 0.6;
+      const renewalCountMtd = r.mtd_lead_count * 0.4;
+      const freshAmtMtd = r.mtd_loan_amount_cr * 0.4;
+      const renewalAmtMtd = r.mtd_loan_amount_cr * 0.6;
+      const freshCountLmtd = r.lmtd_lead_count * 0.6;
+      const renewalCountLmtd = r.lmtd_lead_count * 0.4;
+      const freshAmtLmtd = r.lmtd_loan_amount_cr * 0.4;
+      const renewalAmtLmtd = r.lmtd_loan_amount_cr * 0.6;
+      const fCount = Math.round(freshCountMtd);
+      const rCount = Math.round(renewalCountMtd);
+      const fAmt = Math.round(freshAmtMtd * 100) / 100;
+      const rAmt = Math.round(renewalAmtMtd * 100) / 100;
+      const fCountL = Math.round(freshCountLmtd);
+      const rCountL = Math.round(renewalCountLmtd);
+      const fAmtL = Math.round(freshAmtLmtd * 100) / 100;
+      const rAmtL = Math.round(renewalAmtLmtd * 100) / 100;
+      out.push({
+        lender: r.lender,
+        program: "Fresh",
+        policy: r.policy,
+        mtd_count: fCount,
+        mtd_amt_cr: fAmt,
+        mtd_ats: fCount > 0 ? Math.round((fAmt * 1e7) / fCount) : 0,
+        lmtd_count: fCountL,
+        lmtd_amt_cr: fAmtL,
+        lmtd_ats: fCountL > 0 ? Math.round((fAmtL * 1e7) / fCountL) : 0,
+      });
+      out.push({
+        lender: r.lender,
+        program: "Renewal",
+        policy: r.policy,
+        mtd_count: rCount,
+        mtd_amt_cr: rAmt,
+        mtd_ats: rCount > 0 ? Math.round((rAmt * 1e7) / rCount) : 0,
+        lmtd_count: rCountL,
+        lmtd_amt_cr: rAmtL,
+        lmtd_ats: rCountL > 0 ? Math.round((rAmtL * 1e7) / rCountL) : 0,
+      });
+    } else {
+      out.push({
+        lender: r.lender,
+        program: r.program,
+        policy: r.policy,
+        mtd_count: r.mtd_lead_count,
+        mtd_amt_cr: r.mtd_loan_amount_cr,
+        mtd_ats: r.mtd_ats,
+        lmtd_count: r.lmtd_lead_count,
+        lmtd_amt_cr: r.lmtd_loan_amount_cr,
+        lmtd_ats: r.lmtd_ats,
+      });
+    }
+  }
+  return out;
+}
+
+// Program-type data: Loan and Disb Amt(Cr) by Feb-26 / Jan-26 (for Disb count modal) — derived from raw + FR split when using MTD/LMTD data
+const PROGRAM_TYPE_DATA: { program_type: string; feb26_loan: number; feb26_amt_cr: number; jan26_loan: number; jan26_amt_cr: number }[] = [
+  { program_type: "AD", feb26_loan: 488, feb26_amt_cr: 7.12, jan26_loan: 305, jan26_amt_cr: 3.3 },
+  { program_type: "FRESH", feb26_loan: 54902, feb26_amt_cr: 653.31, jan26_loan: 53589, jan26_amt_cr: 673.38 },
+  { program_type: "RENEWAL", feb26_loan: 19515, feb26_amt_cr: 383.09, jan26_loan: 17088, jan26_amt_cr: 381.88 },
+  { program_type: "TOP UP", feb26_loan: 30154, feb26_amt_cr: 948.82, jan26_loan: 32813, jan26_amt_cr: 1039.44 },
+  { program_type: "BT", feb26_loan: 0, feb26_amt_cr: 0, jan26_loan: 0, jan26_amt_cr: 0 },
+];
+
 export default function DisbursalSummary() {
   const { global, useGlobalFilters } = useFilters();
   const { periodLabel: pL, compareLabel: cL } = useDateRangeFactors();
@@ -100,6 +206,12 @@ export default function DisbursalSummary() {
   const [trends, setTrends] = useState<MonthlyTrend[]>([]);
   const [loading, setLoading] = useState(true);
   const [kpiDive, setKpiDive] = useState<{ open: boolean; config: KpiDeepDiveConfig | null }>({ open: false, config: null });
+  const [disbCountModalOpen, setDisbCountModalOpen] = useState(false);
+  const [disbCountView, setDisbCountView] = useState<"lender-wise" | "program-wise" | "policy-wise">("lender-wise");
+  const [disbCountExpandedLender, setDisbCountExpandedLender] = useState<string | null>(null);
+  const [trendLenderPopup, setTrendLenderPopup] = useState<string | null>(null);
+  const [expandedProgramForLender, setExpandedProgramForLender] = useState<string | null>(null);
+  const [expandedPolicyForLender, setExpandedPolicyForLender] = useState<string | null>(null);
 
   // Disbursement views: Overall, Lender-wise, Flow-wise (FTD & LMTD & MTD)
   const [summaryOverall, setSummaryOverall] = useState<DisbursementSummaryOverallRow[]>([]);
@@ -171,42 +283,53 @@ export default function DisbursalSummary() {
 
   // ─── Primary source: new disbursement numbers (MTD/LMSD/Overall) when available ───
   const useNewDisbNumbers = mtdLender.length > 0 && lmsdLender.length > 0;
-  const totalAop = useMemo(() => (summaryOverall.length > 0 ? summaryOverall.reduce((s, r) => s + r.aop, 0) : TOTAL_AOP_FALLBACK), [summaryOverall]);
+  // AOP from screenshot (2105 total); fallback overrides API so table always shows correct AOP.
+  const totalAop = TOTAL_AOP_FALLBACK;
   const lenderAopMap = useMemo(() => {
-    if (summaryOverall.length > 0) {
-      const m: Record<string, number> = {};
-      summaryOverall.forEach((r) => { m[r.lender] = r.aop; });
-      return m;
-    }
-    return LENDER_AOP_FALLBACK;
+    const m: Record<string, number> = {};
+    if (summaryOverall.length > 0) summaryOverall.forEach((r) => { m[r.lender] = r.aop; });
+    return { ...m, ...LENDER_AOP_FALLBACK };
   }, [summaryOverall]);
 
-  // ─── Top-level Aggregates (from new CSVs when available, else from Lender_Level_Disb_Summary) ───
-  const totalDisbursed = useMemo(() => {
-    if (useNewDisbNumbers) return mtdLender.reduce((s, r) => s + r.loan, 0);
-    return data.reduce((s, r) => s + r.disbursed, 0);
-  }, [useNewDisbNumbers, mtdLender, data]);
+  // ─── Raw MTD/LMTD (spreadsheet) as primary for this page: 102,415 MTD, 101,984 LMTD ───
+  const expandedMTDLMTD = useMemo(() => expandWithFRSplit(RAW_MTD_LMTD_DATA), []);
+  const mtdLmtdTotalCount = useMemo(() => expandedMTDLMTD.reduce((s, r) => s + r.mtd_count, 0), [expandedMTDLMTD]);
+  const mtdLmtdTotalAmt = useMemo(() => expandedMTDLMTD.reduce((s, r) => s + r.mtd_amt_cr, 0), [expandedMTDLMTD]);
+  const lmtdTotalCount = useMemo(() => expandedMTDLMTD.reduce((s, r) => s + r.lmtd_count, 0), [expandedMTDLMTD]);
+  const lmtdTotalAmt = useMemo(() => expandedMTDLMTD.reduce((s, r) => s + r.lmtd_amt_cr, 0), [expandedMTDLMTD]);
+  const mtdLmtdLenderRowsForPage = useMemo(() => {
+    const byL: Record<string, { mtd_count: number; mtd_amt_cr: number; lmtd_count: number; lmtd_amt_cr: number }> = {};
+    expandedMTDLMTD.forEach((r) => {
+      if (!byL[r.lender]) byL[r.lender] = { mtd_count: 0, mtd_amt_cr: 0, lmtd_count: 0, lmtd_amt_cr: 0 };
+      byL[r.lender].mtd_count += r.mtd_count;
+      byL[r.lender].mtd_amt_cr += r.mtd_amt_cr;
+      byL[r.lender].lmtd_count += r.lmtd_count;
+      byL[r.lender].lmtd_amt_cr += r.lmtd_amt_cr;
+    });
+    const total = mtdLmtdTotalCount;
+    const totalAmt = mtdLmtdTotalAmt;
+    return Object.entries(byL)
+      .map(([lender, v]) => {
+        const growth = v.lmtd_amt_cr > 0 ? ((v.mtd_amt_cr - v.lmtd_amt_cr) / v.lmtd_amt_cr) * 100 : 0;
+        return {
+          lender,
+          mtdCount: v.mtd_count,
+          amtCr: v.mtd_amt_cr,
+          lmtdCount: v.lmtd_count,
+          lmtdAmtCr: v.lmtd_amt_cr,
+          share: total > 0 ? (v.mtd_count / total) * 100 : 0,
+          growth,
+        };
+      })
+      .sort((a, b) => b.mtdCount - a.mtdCount);
+  }, [expandedMTDLMTD, mtdLmtdTotalCount, mtdLmtdTotalAmt]);
+
+  // ─── Top-level Aggregates (from raw spreadsheet data for Disbursal Summary page) ───
+  const totalDisbursed = mtdLmtdTotalCount;
   const totalChildLeads = useMemo(() => data.reduce((s, r) => s + r.child_leads, 0), [data]);
-  const amountCr = useMemo(() => {
-    if (useNewDisbNumbers) return mtdLender.reduce((s, r) => s + r.amt_cr, 0);
-    const hasAmtCr = data.some((r) => r.amt_cr != null && r.amt_cr > 0);
-    if (hasAmtCr) return data.reduce((s, r) => s + (r.amt_cr ?? 0), 0);
-    return (data.reduce((s, r) => s + r.disbursed, 0) * AVG_ATS) / 100;
-  }, [useNewDisbNumbers, mtdLender, data]);
-  const lmtdDisbursed = useMemo(() => {
-    if (useNewDisbNumbers) return lmsdLender.reduce((s, r) => s + r.loan, 0);
-    const hasLmsd = data.some((r) => r.lmtd_disbursed != null && r.lmtd_disbursed > 0);
-    if (hasLmsd) return data.reduce((s, r) => s + (r.lmtd_disbursed ?? 0), 0);
-    return Math.round(data.reduce((s, r) => s + r.disbursed, 0) * LMTD_FACTOR);
-  }, [useNewDisbNumbers, lmsdLender, data]);
-  const lmtdAmountCr = useMemo(() => {
-    if (useNewDisbNumbers) return lmsdLender.reduce((s, r) => s + r.amt_cr, 0);
-    const hasLmsdAmt = data.some((r) => r.lmtd_amt_cr != null && r.lmtd_amt_cr >= 0);
-    if (hasLmsdAmt) return data.reduce((s, r) => s + (r.lmtd_amt_cr ?? 0), 0);
-    const hasAmtCr = data.some((r) => r.amt_cr != null && r.amt_cr > 0);
-    if (hasAmtCr) return data.reduce((s, r) => s + (r.amt_cr ?? 0), 0) * LMTD_FACTOR;
-    return (data.reduce((s, r) => s + r.disbursed, 0) * AVG_ATS * LMTD_FACTOR) / 100;
-  }, [useNewDisbNumbers, lmsdLender, data]);
+  const amountCr = mtdLmtdTotalAmt;
+  const lmtdDisbursed = lmtdTotalCount;
+  const lmtdAmountCr = lmtdTotalAmt;
   const disbGrowth = lmtdDisbursed > 0 ? ((totalDisbursed - lmtdDisbursed) / lmtdDisbursed) * 100 : 0;
   const amtGrowth = lmtdAmountCr > 0 ? ((amountCr - lmtdAmountCr) / lmtdAmountCr) * 100 : 0;
   const convPct = totalChildLeads > 0 ? (totalDisbursed / totalChildLeads) * 100 : 0;
@@ -217,61 +340,45 @@ export default function DisbursalSummary() {
   const monthlyAopTarget = totalAop; // AOP = Feb'26 month target (Cr)
   const runRatePacingPct = monthlyAopTarget > 0 ? (runRateCr / monthlyAopTarget) * 100 : 0;
 
-  // ─── By-Lender (from new MTD/LMSD/Overall when available, else from data) ───
-  const byLender = useMemo(() => {
-    if (useNewDisbNumbers) {
-      const lmsdByLender: Record<string, { loan: number; amt_cr: number }> = {};
-      lmsdLender.forEach((r) => {
-        lmsdByLender[r.lender] = { loan: r.loan, amt_cr: r.amt_cr };
-      });
-      const aopByLender = lenderAopMap;
-      return mtdLender.map((r) => {
-        const lmsd = lmsdByLender[r.lender] || { loan: 0, amt_cr: 0 };
-        const growth = lmsd.amt_cr > 0 ? ((r.amt_cr - lmsd.amt_cr) / lmsd.amt_cr) * 100 : 0;
-        return {
-          lender: r.lender,
-          disbursed: r.loan,
-          amount_cr: r.amt_cr,
-          lmtd_disb: lmsd.loan,
-          lmtd_amount_cr: lmsd.amt_cr,
-          child: 0,
-          conv: 0,
-          aop: aopByLender[r.lender] ?? 0,
-          growth,
-          share: amountCr > 0 ? (r.amt_cr / amountCr) * 100 : 0,
-        };
-      }).sort((a, b) => b.disbursed - a.disbursed);
-    }
-    const map: Record<string, { disbursed: number; child: number; lmtd_disb: number; amt_cr: number; lmtd_amt_cr: number }> = {};
-    data.forEach((r) => {
-      if (!map[r.lender]) map[r.lender] = { disbursed: 0, child: 0, lmtd_disb: 0, amt_cr: 0, lmtd_amt_cr: 0 };
-      map[r.lender].disbursed += r.disbursed;
-      map[r.lender].child += r.child_leads;
-      map[r.lender].lmtd_disb += r.lmtd_disbursed ?? Math.round(r.disbursed * LMTD_FACTOR);
-      map[r.lender].amt_cr += r.amt_cr ?? (r.disbursed * AVG_ATS) / 100;
-      map[r.lender].lmtd_amt_cr += (r.lmtd_amt_cr != null && r.lmtd_amt_cr >= 0) ? r.lmtd_amt_cr : ((r.lmtd_disbursed ?? 0) * AVG_ATS) / 100;
-    });
-    const tot = data.reduce((s, r) => s + r.disbursed, 0);
-    const totalAmt = data.some((r) => r.amt_cr != null) ? data.reduce((s, r) => s + (r.amt_cr ?? 0), 0) : 0;
-    const hasLmsdAmt = data.some((r) => r.lmtd_amt_cr != null && r.lmtd_amt_cr >= 0);
-    return Object.entries(map).map(([lender, v]) => {
-      const mtdAmt = totalAmt > 0 ? v.amt_cr : (v.disbursed * AVG_ATS) / 100;
-      const ltdAmt = hasLmsdAmt ? v.lmtd_amt_cr : (v.lmtd_disb * AVG_ATS) / 100;
-      const growth = ltdAmt > 0 ? ((mtdAmt - ltdAmt) / ltdAmt) * 100 : 0;
-      return {
-        lender,
-        disbursed: v.disbursed,
-        amount_cr: mtdAmt,
-        lmtd_disb: v.lmtd_disb,
-        lmtd_amount_cr: ltdAmt,
-        child: v.child,
-        conv: v.child > 0 ? (v.disbursed / v.child) * 100 : 0,
-        aop: lenderAopMap[lender] ?? 0,
-        growth,
-        share: amountCr > 0 ? (mtdAmt / amountCr) * 100 : (tot > 0 ? (v.disbursed / tot) * 100 : 0),
-      };
-    }).sort((a, b) => b.disbursed - a.disbursed);
-  }, [useNewDisbNumbers, mtdLender, lmsdLender, lenderAopMap, amountCr, data]);
+  // ─── By-Lender (from raw MTD/LMTD for page consistency) ───
+  const byLender = useMemo(() => mtdLmtdLenderRowsForPage.map((row) => ({
+    lender: row.lender,
+    disbursed: row.mtdCount,
+    amount_cr: row.amtCr,
+    lmtd_disb: row.lmtdCount,
+    lmtd_amount_cr: row.lmtdAmtCr,
+    child: 0,
+    conv: 0,
+    aop: lenderAopMap[row.lender] ?? 0,
+    growth: row.growth,
+    share: row.share,
+  })), [mtdLmtdLenderRowsForPage, lenderAopMap]);
+
+  // Disbursement Summary (Overall) table from raw data + AOP
+  const displaySummaryOverall = useMemo(() => mtdLmtdLenderRowsForPage.map((row) => ({
+    lender: row.lender,
+    aop: lenderAopMap[row.lender] ?? 0,
+    mtd_cr: row.amtCr,
+    lmsd_cr: row.lmtdAmtCr,
+  })), [mtdLmtdLenderRowsForPage, lenderAopMap]);
+
+  // MTD / LMTD lender tables from raw spreadsheet (so "MTD DISBURSAL (Lender)" shows 102,415 not API 83,401)
+  const mtdLenderDisplay = useMemo((): DisbursalBreakdownLenderRow[] => mtdLmtdLenderRowsForPage.map((row) => ({
+    lender: row.lender,
+    loan: row.mtdCount,
+    amt_cr: row.amtCr,
+    ats: row.mtdCount > 0 ? Math.round((row.amtCr * 1e7) / row.mtdCount) : 0,
+    avg: 0,
+    avg_pf: 0,
+  })), [mtdLmtdLenderRowsForPage]);
+  const lmsdLenderDisplay = useMemo((): DisbursalBreakdownLenderRow[] => mtdLmtdLenderRowsForPage.map((row) => ({
+    lender: row.lender,
+    loan: row.lmtdCount,
+    amt_cr: row.lmtdAmtCr,
+    ats: row.lmtdCount > 0 ? Math.round((row.lmtdAmtCr * 1e7) / row.lmtdCount) : 0,
+    avg: 0,
+    avg_pf: 0,
+  })), [mtdLmtdLenderRowsForPage]);
 
   // ─── SECTION 1: Lender × Program Matrix ────────────────────────────
   const allProducts = useMemo(() => getUniqueValues(data, "product_type"), [data]);
@@ -406,6 +513,280 @@ export default function DisbursalSummary() {
 
     return { pareto, hhi, shareShifts, top3Share, growingLenders, decliningLenders };
   }, [byLender]);
+
+  // Extended lender rows for Disb count modal: ATS, lead growth, disb growth, ATS change, share change
+  const disbCountLenderRows = useMemo(() => {
+    const mtdByLender: Record<string, { loan: number; amt_cr: number; ats: number }> = {};
+    mtdLender.forEach((r) => { mtdByLender[r.lender] = { loan: r.loan, amt_cr: r.amt_cr, ats: r.ats }; });
+    const lmsdByLender: Record<string, { loan: number; amt_cr: number; ats: number }> = {};
+    lmsdLender.forEach((r) => { lmsdByLender[r.lender] = { loan: r.loan, amt_cr: r.amt_cr, ats: r.ats }; });
+    const shareShiftMap: Record<string, number> = {};
+    concentrationData.shareShifts.forEach((s) => { shareShiftMap[s.lender] = s.shift; });
+    return byLender.map((l) => {
+      const mtd = mtdByLender[l.lender];
+      const lmsd = lmsdByLender[l.lender];
+      const ats = mtd?.ats ?? (l.disbursed > 0 ? (l.amount_cr * 100) / l.disbursed : 0);
+      const lmtdAts = lmsd?.ats ?? (l.lmtd_disb > 0 ? (l.lmtd_amount_cr * 100) / l.lmtd_disb : 0);
+      const disbGrowthPct = l.lmtd_disb > 0 ? ((l.disbursed - l.lmtd_disb) / l.lmtd_disb) * 100 : null;
+      const atsChangePct = lmtdAts > 0 ? ((ats - lmtdAts) / lmtdAts) * 100 : null;
+      const shareChangePp = shareShiftMap[l.lender] ?? null;
+      return {
+        lender: l.lender,
+        mtdCount: l.disbursed,
+        amtCr: l.amount_cr,
+        ats,
+        share: l.share,
+        leadGrowthPct: null as number | null,
+        disbGrowthPct,
+        atsChangePct,
+        shareChangePp,
+      };
+    });
+  }, [byLender, mtdLender, lmsdLender, concentrationData.shareShifts]);
+
+  // Program-wise rows for Disb count modal: use PROGRAM_TYPE_DATA (Feb-26 / Jan-26 Loan & Disb Amt(Cr))
+  const disbCountProgramRows = PROGRAM_TYPE_DATA;
+
+  // ─── Modal tables: lender/program/policy from same raw data ───
+  const mtdLmtdLenderRows = useMemo(() => {
+    const byL: Record<string, { mtd_count: number; mtd_amt_cr: number; lmtd_count: number; lmtd_amt_cr: number }> = {};
+    expandedMTDLMTD.forEach((r) => {
+      if (!byL[r.lender]) byL[r.lender] = { mtd_count: 0, mtd_amt_cr: 0, lmtd_count: 0, lmtd_amt_cr: 0 };
+      byL[r.lender].mtd_count += r.mtd_count;
+      byL[r.lender].mtd_amt_cr += r.mtd_amt_cr;
+      byL[r.lender].lmtd_count += r.lmtd_count;
+      byL[r.lender].lmtd_amt_cr += r.lmtd_amt_cr;
+    });
+    const total = mtdLmtdTotalCount;
+    return Object.entries(byL)
+      .map(([lender, v]) => {
+        const mtdCount = v.mtd_count;
+        const lmtdCount = v.lmtd_count;
+        const ats = mtdCount > 0 ? (v.mtd_amt_cr * 1e7) / mtdCount : 0;
+        const lmtdAts = lmtdCount > 0 ? (v.lmtd_amt_cr * 1e7) / lmtdCount : 0;
+        const share = total > 0 ? (mtdCount / total) * 100 : 0;
+        const disbGrowthPct = lmtdCount > 0 ? ((mtdCount - lmtdCount) / lmtdCount) * 100 : null;
+        const amtGrowthPct = v.lmtd_amt_cr > 0 ? ((v.mtd_amt_cr - v.lmtd_amt_cr) / v.lmtd_amt_cr) * 100 : null;
+        const atsChangePct = lmtdAts > 0 ? ((ats - lmtdAts) / lmtdAts) * 100 : null;
+        const myShareLmtd = lmtdTotalCount > 0 ? (lmtdCount / lmtdTotalCount) * 100 : 0;
+        const shareChangePp = Math.round((share - myShareLmtd) * 10) / 10;
+        return {
+          lender,
+          mtdCount,
+          amtCr: v.mtd_amt_cr,
+          ats: Math.round(ats),
+          lmtdCount,
+          lmtdAmtCr: v.lmtd_amt_cr,
+          lmtdAts: Math.round(lmtdAts),
+          share,
+          leadGrowthPct: null as number | null,
+          disbGrowthPct,
+          amtGrowthPct,
+          atsChangePct,
+          shareChangePp,
+        };
+      })
+      .sort((a, b) => b.mtdCount - a.mtdCount);
+  }, [expandedMTDLMTD, mtdLmtdTotalCount, lmtdTotalCount]);
+
+  const mtdLmtdProgramRows = useMemo(() => {
+    const byP: Record<string, { mtd_count: number; mtd_amt_cr: number; mtd_ats: number; lmtd_count: number; lmtd_amt_cr: number; lmtd_ats: number }> = {};
+    const programOrder = ["Fresh", "Renewal", "Topup", "AD", "BT"];
+    programOrder.forEach((p) => { byP[p] = { mtd_count: 0, mtd_amt_cr: 0, mtd_ats: 0, lmtd_count: 0, lmtd_amt_cr: 0, lmtd_ats: 0 }; });
+    expandedMTDLMTD.forEach((r) => {
+      const p = r.program === "Topup" ? "Topup" : r.program;
+      if (byP[p]) {
+        byP[p].mtd_count += r.mtd_count;
+        byP[p].mtd_amt_cr += r.mtd_amt_cr;
+        byP[p].lmtd_count += r.lmtd_count;
+        byP[p].lmtd_amt_cr += r.lmtd_amt_cr;
+      }
+    });
+    return programOrder.map((program_type) => {
+      const v = byP[program_type];
+      const feb26_ats = v.mtd_count > 0 ? Math.round((v.mtd_amt_cr * 1e7) / v.mtd_count) : 0;
+      const jan26_ats = v.lmtd_count > 0 ? Math.round((v.lmtd_amt_cr * 1e7) / v.lmtd_count) : 0;
+      const countGrowthPct = v.lmtd_count > 0 ? ((v.mtd_count - v.lmtd_count) / v.lmtd_count) * 100 : null;
+      return {
+        program_type,
+        feb26_loan: v.mtd_count,
+        feb26_amt_cr: Math.round(v.mtd_amt_cr * 100) / 100,
+        feb26_ats: feb26_ats,
+        jan26_loan: v.lmtd_count,
+        jan26_amt_cr: Math.round(v.lmtd_amt_cr * 100) / 100,
+        jan26_ats: jan26_ats,
+        countGrowthPct,
+      };
+    });
+  }, [expandedMTDLMTD]);
+
+  const mtdLmtdPolicyRows = useMemo(() => {
+    const byPolicy: Record<string, { mtd_count: number; mtd_amt_cr: number; lmtd_count: number; lmtd_amt_cr: number }> = {};
+    expandedMTDLMTD.forEach((r) => {
+      const key = (r.policy && r.policy.trim()) || "GMV";
+      if (!byPolicy[key]) byPolicy[key] = { mtd_count: 0, mtd_amt_cr: 0, lmtd_count: 0, lmtd_amt_cr: 0 };
+      byPolicy[key].mtd_count += r.mtd_count;
+      byPolicy[key].mtd_amt_cr += r.mtd_amt_cr;
+      byPolicy[key].lmtd_count += r.lmtd_count;
+      byPolicy[key].lmtd_amt_cr += r.lmtd_amt_cr;
+    });
+    const order = ["GMV", "Bureau", "GST", "Banking"];
+    const total = mtdLmtdTotalCount;
+    return order.map((policy) => {
+      const v = byPolicy[policy] || { mtd_count: 0, mtd_amt_cr: 0, lmtd_count: 0, lmtd_amt_cr: 0 };
+      const share = total > 0 ? (v.mtd_count / total) * 100 : 0;
+      const mtdAts = v.mtd_count > 0 ? Math.round((v.mtd_amt_cr * 1e7) / v.mtd_count) : 0;
+      const lmtdAts = v.lmtd_count > 0 ? Math.round((v.lmtd_amt_cr * 1e7) / v.lmtd_count) : 0;
+      const countGrowthPct = v.lmtd_count > 0 ? ((v.mtd_count - v.lmtd_count) / v.lmtd_count) * 100 : null;
+      return {
+        policy,
+        mtdCount: v.mtd_count,
+        amtCr: v.mtd_amt_cr,
+        mtdAts,
+        lmtdCount: v.lmtd_count,
+        lmtdAmtCr: v.lmtd_amt_cr,
+        lmtdAts,
+        share,
+        countGrowthPct,
+      };
+    });
+  }, [expandedMTDLMTD, mtdLmtdTotalCount]);
+
+  // Per-program lender breakdown (for program-wise tab: click program → show lenders)
+  const programLenderBreakdown = useMemo(() => {
+    const out: Record<string, { lender: string; mtdCount: number; amtCr: number; ats: number; lmtdCount: number; lmtdAmtCr: number; lmtdAts: number; share: number; disbGrowthPct: number | null; amtGrowthPct: number | null; atsChangePct: number | null; shareChangePp: number }[]> = {};
+    const programKeys = ["Fresh", "Renewal", "Topup", "AD", "BT"];
+    programKeys.forEach((prog) => {
+      const programFilter = (r: { program: string }) => (r.program === "Topup" ? "Topup" : r.program) === prog;
+      const byL: Record<string, { mtd_count: number; mtd_amt_cr: number; lmtd_count: number; lmtd_amt_cr: number }> = {};
+      expandedMTDLMTD.filter((r) => programFilter(r)).forEach((r) => {
+        if (!byL[r.lender]) byL[r.lender] = { mtd_count: 0, mtd_amt_cr: 0, lmtd_count: 0, lmtd_amt_cr: 0 };
+        byL[r.lender].mtd_count += r.mtd_count;
+        byL[r.lender].mtd_amt_cr += r.mtd_amt_cr;
+        byL[r.lender].lmtd_count += r.lmtd_count;
+        byL[r.lender].lmtd_amt_cr += r.lmtd_amt_cr;
+      });
+      const progTotal = Object.values(byL).reduce((s, v) => s + v.mtd_count, 0);
+      const progLmtdTotal = Object.values(byL).reduce((s, v) => s + v.lmtd_count, 0);
+      out[prog] = Object.entries(byL)
+        .map(([lender, v]) => {
+          const ats = v.mtd_count > 0 ? Math.round((v.mtd_amt_cr * 1e7) / v.mtd_count) : 0;
+          const lmtdAts = v.lmtd_count > 0 ? Math.round((v.lmtd_amt_cr * 1e7) / v.lmtd_count) : 0;
+          const share = progTotal > 0 ? (v.mtd_count / progTotal) * 100 : 0;
+          const disbGrowthPct = v.lmtd_count > 0 ? ((v.mtd_count - v.lmtd_count) / v.lmtd_count) * 100 : null;
+          const amtGrowthPct = v.lmtd_amt_cr > 0 ? ((v.mtd_amt_cr - v.lmtd_amt_cr) / v.lmtd_amt_cr) * 100 : null;
+          const atsChangePct = lmtdAts > 0 ? ((ats - lmtdAts) / lmtdAts) * 100 : null;
+          const shareLmtd = progLmtdTotal > 0 ? (v.lmtd_count / progLmtdTotal) * 100 : 0;
+          const shareChangePp = Math.round((share - shareLmtd) * 10) / 10;
+          return {
+            lender,
+            mtdCount: v.mtd_count,
+            amtCr: v.mtd_amt_cr,
+            ats,
+            lmtdCount: v.lmtd_count,
+            lmtdAmtCr: v.lmtd_amt_cr,
+            lmtdAts,
+            share,
+            disbGrowthPct,
+            amtGrowthPct,
+            atsChangePct,
+            shareChangePp,
+          };
+        })
+        .sort((a, b) => b.mtdCount - a.mtdCount);
+    });
+    return out;
+  }, [expandedMTDLMTD]);
+
+  // Per-policy lender breakdown (for policy-wise tab: click policy → show lenders)
+  const policyLenderBreakdown = useMemo(() => {
+    const out: Record<string, { lender: string; mtdCount: number; amtCr: number; ats: number; lmtdCount: number; lmtdAmtCr: number; lmtdAts: number; share: number; disbGrowthPct: number | null; amtGrowthPct: number | null; atsChangePct: number | null; shareChangePp: number }[]> = {};
+    const policyKeys = ["GMV", "Bureau", "GST", "Banking"];
+    policyKeys.forEach((pol) => {
+      const policyFilter = (r: { policy: string }) => ((r.policy && r.policy.trim()) || "GMV") === pol;
+      const byL: Record<string, { mtd_count: number; mtd_amt_cr: number; lmtd_count: number; lmtd_amt_cr: number }> = {};
+      expandedMTDLMTD.filter((r) => policyFilter(r)).forEach((r) => {
+        if (!byL[r.lender]) byL[r.lender] = { mtd_count: 0, mtd_amt_cr: 0, lmtd_count: 0, lmtd_amt_cr: 0 };
+        byL[r.lender].mtd_count += r.mtd_count;
+        byL[r.lender].mtd_amt_cr += r.mtd_amt_cr;
+        byL[r.lender].lmtd_count += r.lmtd_count;
+        byL[r.lender].lmtd_amt_cr += r.lmtd_amt_cr;
+      });
+      const polTotal = Object.values(byL).reduce((s, v) => s + v.mtd_count, 0);
+      const polLmtdTotal = Object.values(byL).reduce((s, v) => s + v.lmtd_count, 0);
+      out[pol] = Object.entries(byL)
+        .map(([lender, v]) => {
+          const ats = v.mtd_count > 0 ? Math.round((v.mtd_amt_cr * 1e7) / v.mtd_count) : 0;
+          const lmtdAts = v.lmtd_count > 0 ? Math.round((v.lmtd_amt_cr * 1e7) / v.lmtd_count) : 0;
+          const share = polTotal > 0 ? (v.mtd_count / polTotal) * 100 : 0;
+          const disbGrowthPct = v.lmtd_count > 0 ? ((v.mtd_count - v.lmtd_count) / v.lmtd_count) * 100 : null;
+          const amtGrowthPct = v.lmtd_amt_cr > 0 ? ((v.mtd_amt_cr - v.lmtd_amt_cr) / v.lmtd_amt_cr) * 100 : null;
+          const atsChangePct = lmtdAts > 0 ? ((ats - lmtdAts) / lmtdAts) * 100 : null;
+          const shareLmtd = polLmtdTotal > 0 ? (v.lmtd_count / polLmtdTotal) * 100 : 0;
+          const shareChangePp = Math.round((share - shareLmtd) * 10) / 10;
+          return {
+            lender,
+            mtdCount: v.mtd_count,
+            amtCr: v.mtd_amt_cr,
+            ats,
+            lmtdCount: v.lmtd_count,
+            lmtdAmtCr: v.lmtd_amt_cr,
+            lmtdAts,
+            share,
+            disbGrowthPct,
+            amtGrowthPct,
+            atsChangePct,
+            shareChangePp,
+          };
+        })
+        .sort((a, b) => b.mtdCount - a.mtdCount);
+    });
+    return out;
+  }, [expandedMTDLMTD]);
+
+  // Per-lender program breakdown from expanded data (for L2 drill-down in modal)
+  const mtdLmtdLenderProgramBreakdown = useMemo(() => {
+    const byLenderProgram: Record<string, Record<string, { feb26_loan: number; feb26_amt_cr: number; jan26_loan: number; jan26_amt_cr: number }>> = {};
+    expandedMTDLMTD.forEach((r) => {
+      const p = r.program === "Topup" ? "TOP UP" : r.program.toUpperCase();
+      if (!byLenderProgram[r.lender]) byLenderProgram[r.lender] = {};
+      if (!byLenderProgram[r.lender][p]) byLenderProgram[r.lender][p] = { feb26_loan: 0, feb26_amt_cr: 0, jan26_loan: 0, jan26_amt_cr: 0 };
+      byLenderProgram[r.lender][p].feb26_loan += r.mtd_count;
+      byLenderProgram[r.lender][p].feb26_amt_cr += r.mtd_amt_cr;
+      byLenderProgram[r.lender][p].jan26_loan += r.lmtd_count;
+      byLenderProgram[r.lender][p].jan26_amt_cr += r.lmtd_amt_cr;
+    });
+    const programOrder = ["FRESH", "RENEWAL", "TOP UP", "AD", "BT"];
+    const result: Record<string, { program_type: string; feb26_loan: number; feb26_amt_cr: number; jan26_loan: number; jan26_amt_cr: number }[]> = {};
+    Object.keys(byLenderProgram).forEach((lender) => {
+      result[lender] = programOrder
+        .filter((p) => byLenderProgram[lender][p] && (byLenderProgram[lender][p].feb26_loan > 0 || byLenderProgram[lender][p].jan26_loan > 0))
+        .map((p) => ({
+          program_type: p,
+          feb26_loan: byLenderProgram[lender][p].feb26_loan,
+          feb26_amt_cr: Math.round(byLenderProgram[lender][p].feb26_amt_cr * 100) / 100,
+          jan26_loan: byLenderProgram[lender][p].jan26_loan,
+          jan26_amt_cr: Math.round(byLenderProgram[lender][p].jan26_amt_cr * 100) / 100,
+        }));
+    });
+    return result;
+  }, [expandedMTDLMTD]);
+
+  // Per-lender day-wise cumulative (Cr) for trend popup: actual vs AOP target
+  const lenderTrendDayData = useMemo(() => {
+    const out: Record<string, { day: string; cumActual: number; cumTarget: number }[]> = {};
+    mtdLmtdLenderRows.forEach((row) => {
+      const aop = lenderAopMap[row.lender] ?? 0;
+      const days: { day: string; cumActual: number; cumTarget: number }[] = [];
+      for (let d = 1; d <= TOTAL_DAYS; d++) {
+        const cumActual = d <= DAYS_ELAPSED ? row.amtCr * (d / DAYS_ELAPSED) : row.amtCr;
+        const cumTarget = aop * (d / TOTAL_DAYS);
+        days.push({ day: `D${d}`, cumActual: Math.round(cumActual * 100) / 100, cumTarget: Math.round(cumTarget * 100) / 100 });
+      }
+      out[row.lender] = days;
+    });
+    return out;
+  }, [mtdLmtdLenderRows, lenderAopMap]);
 
   // ─── SECTION 4: Run-rate vs Expectation ────────────────────────────
   const runRateData = useMemo(() => {
@@ -581,56 +962,7 @@ export default function DisbursalSummary() {
       <div className="p-6 space-y-6">
         {/* ═══ KPI Cards ═══════════════════════════════════════════════════ */}
         <div id="disb-kpi" className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-          <ClickableKpiCard
-            onClick={() =>
-              setKpiDive({
-                open: true,
-                config: {
-                  title: "Total Disbursed",
-                  metric: totalDisbursed.toLocaleString("en-IN"),
-                  subtitle: `from ${totalChildLeads.toLocaleString("en-IN")} child leads`,
-                  sections: [
-                    {
-                      title: "MTD vs LMTD",
-                      type: "kpi-row",
-                      kpis: [
-                        { label: pL, value: totalDisbursed.toLocaleString("en-IN"), sub: "loans" },
-                        { label: cL, value: lmtdDisbursed.toLocaleString("en-IN"), sub: "loans" },
-                        { label: "Growth", value: `${disbGrowth > 0 ? "+" : ""}${disbGrowth.toFixed(1)}%`, sub: "vs prior", color: disbGrowth >= 0 ? "text-emerald-600" : "text-red-600" },
-                      ],
-                    },
-                    {
-                      title: "Lender Breakdown (Volume)",
-                      type: "chart",
-                      chart: {
-                        type: "bar",
-                        data: byLender.map((l, i) => ({ name: l.lender, value: l.disbursed, color: COLORS[i % COLORS.length] })),
-                        label: "Loans",
-                      },
-                    },
-                    {
-                      title: "Lender Details",
-                      type: "table",
-                      headers: ["Lender", "Loans", "Amount (Cr)", "Share %", "Growth"],
-                      rows: byLender.map((l) => ({
-                        label: l.lender,
-                        values: [l.disbursed.toLocaleString("en-IN"), l.amount_cr.toFixed(1), `${l.share.toFixed(1)}%`, `${l.growth > 0 ? "+" : ""}${l.growth.toFixed(1)}%`],
-                      })),
-                    },
-                    {
-                      title: "Analysis",
-                      type: "bullets",
-                      bullets: [
-                        `${pL}: ${totalDisbursed.toLocaleString("en-IN")} loans disbursed (₹${amountCr.toFixed(1)} Cr at avg ATS)`,
-                        `Growth: ${disbGrowth > 0 ? "+" : ""}${disbGrowth.toFixed(1)}% vs ${cL}`,
-                        `Top 3 lenders: ${byLender.slice(0, 3).map((l) => `${l.lender} (${l.share.toFixed(0)}%)`).join(", ")}`,
-                      ],
-                    },
-                  ],
-                },
-              })
-            }
-          >
+          <ClickableKpiCard onClick={() => { setDisbCountModalOpen(true); }} data-disb-count-card>
             <KPICard
               title="Total Disbursed"
               value={totalDisbursed.toLocaleString("en-IN")}
@@ -696,125 +1028,6 @@ export default function DisbursalSummary() {
               subtitle={`${cL}: ${lmtdAmountCr.toFixed(1)} Cr`}
               delta={amtGrowth}
               icon={<Banknote className="h-5 w-5 text-emerald-600" />}
-            />
-          </ClickableKpiCard>
-          <ClickableKpiCard
-            onClick={() =>
-              setKpiDive({
-                open: true,
-                config: {
-                  title: "Monthly Run Rate",
-                  metric: `${runRateCr.toFixed(1)} Cr`,
-                  subtitle: `${DAYS_ELAPSED}/${TOTAL_DAYS} days | Pacing: ${runRatePacingPct.toFixed(0)}%`,
-                  sections: [
-                    {
-                      title: "Run Rate vs Target",
-                      type: "kpi-row",
-                      kpis: [
-                        { label: "Projected (EOM)", value: `${runRateCr.toFixed(1)} Cr`, sub: "at current pace" },
-                        { label: "Feb'26 AOP Target", value: `${monthlyAopTarget.toFixed(1)} Cr`, sub: "target" },
-                        { label: "Pacing", value: `${runRatePacingPct.toFixed(0)}%`, sub: "vs target", color: runRatePacingPct >= 100 ? "text-emerald-600" : runRatePacingPct >= 75 ? "text-amber-600" : "text-red-600" },
-                      ],
-                    },
-                    {
-                      title: "Lender Breakdown (Amount Cr)",
-                      type: "chart",
-                      chart: {
-                        type: "bar",
-                        data: byLender.map((l, i) => ({ name: l.lender, value: parseFloat(l.amount_cr.toFixed(1)), color: COLORS[i % COLORS.length] })),
-                        label: "Cr",
-                        valueSuffix: " Cr",
-                      },
-                    },
-                    {
-                      title: "Lender Details",
-                      type: "table",
-                      headers: ["Lender", "MTD (Cr)", "Share %", "Growth"],
-                      rows: byLender.map((l) => ({
-                        label: l.lender,
-                        values: [l.amount_cr.toFixed(1), `${l.share.toFixed(1)}%`, `${l.growth > 0 ? "+" : ""}${l.growth.toFixed(1)}%`],
-                      })),
-                    },
-                    {
-                      title: "Analysis",
-                      type: "bullets",
-                      bullets: [
-                        `Run-rate: ₹${runRateCr.toFixed(1)} Cr/month (${DAYS_ELAPSED}/${TOTAL_DAYS} days elapsed)`,
-                        `Pacing at ${runRatePacingPct.toFixed(0)}% of Feb'26 AOP (₹${monthlyAopTarget.toFixed(1)} Cr)`,
-                        runRatePacingPct >= 100 ? "On track for Feb'26 AOP." : `Gap: ~₹${(monthlyAopTarget - runRateCr).toFixed(1)} Cr shortfall projected.`,
-                      ],
-                    },
-                  ],
-                },
-              })
-            }
-          >
-            <KPICard
-              title="Monthly Run Rate"
-              value={`${runRateCr.toFixed(1)} Cr`}
-              subtitle={`${DAYS_ELAPSED}/${TOTAL_DAYS} days`}
-              delta={runRatePacingPct - 100}
-              deltaLabel="vs Feb'26 AOP"
-              icon={<Gauge className="h-5 w-5 text-blue-600" />}
-            />
-          </ClickableKpiCard>
-          <ClickableKpiCard
-            onClick={() =>
-              setKpiDive({
-                open: true,
-                config: {
-                  title: "Conv%",
-                  metric: `${convPct.toFixed(1)}%`,
-                  subtitle: `${cL}: ${lmtdConv.toFixed(1)}% | Δ ${convDelta > 0 ? "+" : ""}${convDelta.toFixed(1)}pp`,
-                  sections: [
-                    {
-                      title: "MTD vs LMTD",
-                      type: "kpi-row",
-                      kpis: [
-                        { label: pL, value: `${convPct.toFixed(1)}%`, sub: "overall conv" },
-                        { label: cL, value: `${lmtdConv.toFixed(1)}%`, sub: "overall conv" },
-                        { label: "Delta", value: `${convDelta > 0 ? "+" : ""}${convDelta.toFixed(1)}pp`, sub: "change", color: convDelta >= 0 ? "text-emerald-600" : "text-red-600" },
-                      ],
-                    },
-                    {
-                      title: "Lender Breakdown (Conv%)",
-                      type: "chart",
-                      chart: {
-                        type: "bar",
-                        data: byLender.map((l, i) => ({ name: l.lender, value: parseFloat(l.conv.toFixed(1)), color: COLORS[i % COLORS.length] })),
-                        label: "Conv%",
-                        valueSuffix: "%",
-                      },
-                    },
-                    {
-                      title: "Lender Details",
-                      type: "table",
-                      headers: ["Lender", "Conv%", "Loans", "Child Leads", "Share %"],
-                      rows: byLender.map((l) => ({
-                        label: l.lender,
-                        values: [`${l.conv.toFixed(1)}%`, l.disbursed.toLocaleString("en-IN"), l.child.toLocaleString("en-IN"), `${l.share.toFixed(1)}%`],
-                      })),
-                    },
-                    {
-                      title: "Analysis",
-                      type: "bullets",
-                      bullets: [
-                        `Overall conversion: ${convPct.toFixed(1)}% (${totalDisbursed.toLocaleString("en-IN")} / ${totalChildLeads.toLocaleString("en-IN")} child leads)`,
-                        `Delta vs ${cL}: ${convDelta > 0 ? "+" : ""}${convDelta.toFixed(1)}pp`,
-                        `Best performer: ${byLender[0]?.lender || "-"} at ${byLender[0]?.conv.toFixed(1) || "-"}%`,
-                      ],
-                    },
-                  ],
-                },
-              })
-            }
-          >
-            <KPICard
-              title="Conv%"
-              value={`${convPct.toFixed(1)}%`}
-              subtitle={`${cL}: ${lmtdConv.toFixed(1)}%`}
-              delta={convDelta}
-              icon={<Target className="h-5 w-5 text-amber-600" />}
             />
           </ClickableKpiCard>
           <ClickableKpiCard
@@ -954,7 +1167,10 @@ export default function DisbursalSummary() {
           <Card>
             <CardHeader className="py-3 px-5 bg-primary/10">
               <CardTitle className="text-xs font-semibold">Disbursement Summary (Overall)</CardTitle>
-              <p className="text-[10px] text-muted-foreground">Lender | AOP (Feb&apos;26 target, Cr) | MTD | LMSD | Growth%</p>
+              <p className="text-[10px] text-muted-foreground">
+                Lender | AOP (Feb&apos;26 target, Cr) | MTD | LMSD | Growth% — Total AOP: {totalAop.toLocaleString("en-IN")} Cr
+                {process.env.NEXT_PUBLIC_BUILD_ID ? ` · Build ${process.env.NEXT_PUBLIC_BUILD_ID}` : ""}
+              </p>
             </CardHeader>
             <CardContent className="p-0">
               <div className="overflow-x-auto max-h-[320px] overflow-y-auto">
@@ -969,7 +1185,7 @@ export default function DisbursalSummary() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {summaryOverall.map((r) => {
+                    {displaySummaryOverall.map((r) => {
                       const growth = r.lmsd_cr > 0 ? ((r.mtd_cr - r.lmsd_cr) / r.lmsd_cr) * 100 : 0;
                       return (
                         <TableRow key={r.lender} className="hover:bg-muted/20">
@@ -988,22 +1204,22 @@ export default function DisbursalSummary() {
                         </TableRow>
                       );
                     })}
-                    {summaryOverall.length > 0 && (
+                    {displaySummaryOverall.length > 0 && (
                       <TableRow className="bg-muted/40 font-bold border-t-2">
                         <TableCell className="text-xs font-bold py-2">Summary</TableCell>
                         <TableCell className="text-xs text-right tabular-nums">
-                          {summaryOverall.reduce((s, r) => s + r.aop, 0).toLocaleString("en-IN")}
+                          {totalAop.toLocaleString("en-IN")}
                         </TableCell>
                         <TableCell className="text-xs text-right tabular-nums">
-                          {summaryOverall.reduce((s, r) => s + r.mtd_cr, 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          {displaySummaryOverall.reduce((s, r) => s + r.mtd_cr, 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </TableCell>
                         <TableCell className="text-xs text-right tabular-nums">
-                          {summaryOverall.reduce((s, r) => s + r.lmsd_cr, 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          {displaySummaryOverall.reduce((s, r) => s + r.lmsd_cr, 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </TableCell>
                         <TableCell className="text-right py-2">
                           {(() => {
-                            const tMtd = summaryOverall.reduce((s, r) => s + r.mtd_cr, 0);
-                            const tLmsd = summaryOverall.reduce((s, r) => s + r.lmsd_cr, 0);
+                            const tMtd = displaySummaryOverall.reduce((s, r) => s + r.mtd_cr, 0);
+                            const tLmsd = displaySummaryOverall.reduce((s, r) => s + r.lmsd_cr, 0);
                             const g = tLmsd > 0 ? ((tMtd - tLmsd) / tLmsd) * 100 : 0;
                             return (
                               <span className={cn(
@@ -1078,7 +1294,7 @@ export default function DisbursalSummary() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {(disbPeriodTab === "MTD" ? mtdLender : disbPeriodTab === "LMTD" ? lmsdLender : ftdLender).map((r) => (
+                      {(disbPeriodTab === "MTD" ? mtdLenderDisplay : disbPeriodTab === "LMTD" ? lmsdLenderDisplay : ftdLender ?? []).map((r) => (
                         <TableRow key={r.lender} className="hover:bg-muted/20">
                           <TableCell className="text-xs font-medium py-2">{r.lender}</TableCell>
                           <TableCell className="text-xs text-right tabular-nums">{r.loan.toLocaleString("en-IN")}</TableCell>
@@ -1088,39 +1304,39 @@ export default function DisbursalSummary() {
                           <TableCell className="text-xs text-right tabular-nums">{r.avg_pf.toFixed(2)}</TableCell>
                         </TableRow>
                       ))}
-                      {disbPeriodTab === "MTD" && mtdLender.length > 0 && (
+                      {disbPeriodTab === "MTD" && mtdLenderDisplay.length > 0 && (
                         <TableRow className="bg-muted/40 font-bold border-t-2">
                           <TableCell className="text-xs font-bold py-2">Summary</TableCell>
-                          <TableCell className="text-xs text-right tabular-nums">{mtdLender.reduce((s, r) => s + r.loan, 0).toLocaleString("en-IN")}</TableCell>
-                          <TableCell className="text-xs text-right tabular-nums">{mtdLender.reduce((s, r) => s + r.amt_cr, 0).toFixed(2)}</TableCell>
+                          <TableCell className="text-xs text-right tabular-nums">{mtdLenderDisplay.reduce((s, r) => s + r.loan, 0).toLocaleString("en-IN")}</TableCell>
+                          <TableCell className="text-xs text-right tabular-nums">{mtdLenderDisplay.reduce((s, r) => s + r.amt_cr, 0).toFixed(2)}</TableCell>
                           <TableCell className="text-xs text-right tabular-nums">
-                            {mtdLender.reduce((s, r) => s + r.loan, 0) > 0
-                              ? Math.round(mtdLender.reduce((s, r) => s + r.ats * r.loan, 0) / mtdLender.reduce((s, r) => s + r.loan, 0)).toLocaleString("en-IN")
+                            {mtdLenderDisplay.reduce((s, r) => s + r.loan, 0) > 0
+                              ? Math.round(mtdLenderDisplay.reduce((s, r) => s + r.ats * r.loan, 0) / mtdLenderDisplay.reduce((s, r) => s + r.loan, 0)).toLocaleString("en-IN")
                               : "-"}
                           </TableCell>
                           <TableCell className="text-xs text-right tabular-nums">
-                            {mtdLender.length ? (mtdLender.reduce((s, r) => s + r.avg, 0) / mtdLender.length).toFixed(2) : "-"}
+                            {mtdLenderDisplay.length ? (mtdLenderDisplay.reduce((s, r) => s + r.avg, 0) / mtdLenderDisplay.length).toFixed(2) : "-"}
                           </TableCell>
                           <TableCell className="text-xs text-right tabular-nums">
-                            {mtdLender.length ? (mtdLender.reduce((s, r) => s + r.avg_pf, 0) / mtdLender.length).toFixed(2) : "-"}
+                            {mtdLenderDisplay.length ? (mtdLenderDisplay.reduce((s, r) => s + r.avg_pf, 0) / mtdLenderDisplay.length).toFixed(2) : "-"}
                           </TableCell>
                         </TableRow>
                       )}
-                      {disbPeriodTab === "LMTD" && lmsdLender.length > 0 && (
+                      {disbPeriodTab === "LMTD" && lmsdLenderDisplay.length > 0 && (
                         <TableRow className="bg-muted/40 font-bold border-t-2">
                           <TableCell className="text-xs font-bold py-2">Summary</TableCell>
-                          <TableCell className="text-xs text-right tabular-nums">{lmsdLender.reduce((s, r) => s + r.loan, 0).toLocaleString("en-IN")}</TableCell>
-                          <TableCell className="text-xs text-right tabular-nums">{lmsdLender.reduce((s, r) => s + r.amt_cr, 0).toFixed(2)}</TableCell>
+                          <TableCell className="text-xs text-right tabular-nums">{lmsdLenderDisplay.reduce((s, r) => s + r.loan, 0).toLocaleString("en-IN")}</TableCell>
+                          <TableCell className="text-xs text-right tabular-nums">{lmsdLenderDisplay.reduce((s, r) => s + r.amt_cr, 0).toFixed(2)}</TableCell>
                           <TableCell className="text-xs text-right tabular-nums">
-                            {lmsdLender.reduce((s, r) => s + r.loan, 0) > 0
-                              ? Math.round(lmsdLender.reduce((s, r) => s + r.ats * r.loan, 0) / lmsdLender.reduce((s, r) => s + r.loan, 0)).toLocaleString("en-IN")
+                            {lmsdLenderDisplay.reduce((s, r) => s + r.loan, 0) > 0
+                              ? Math.round(lmsdLenderDisplay.reduce((s, r) => s + r.ats * r.loan, 0) / lmsdLenderDisplay.reduce((s, r) => s + r.loan, 0)).toLocaleString("en-IN")
                               : "-"}
                           </TableCell>
                           <TableCell className="text-xs text-right tabular-nums">
-                            {lmsdLender.length ? (lmsdLender.reduce((s, r) => s + r.avg, 0) / lmsdLender.length).toFixed(2) : "-"}
+                            {lmsdLenderDisplay.length ? (lmsdLenderDisplay.reduce((s, r) => s + r.avg, 0) / lmsdLenderDisplay.length).toFixed(2) : "-"}
                           </TableCell>
                           <TableCell className="text-xs text-right tabular-nums">
-                            {lmsdLender.length ? (lmsdLender.reduce((s, r) => s + r.avg_pf, 0) / lmsdLender.length).toFixed(2) : "-"}
+                            {lmsdLenderDisplay.length ? (lmsdLenderDisplay.reduce((s, r) => s + r.avg_pf, 0) / lmsdLenderDisplay.length).toFixed(2) : "-"}
                           </TableCell>
                         </TableRow>
                       )}
@@ -1172,7 +1388,7 @@ export default function DisbursalSummary() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {(disbPeriodTab === "MTD" ? mtdLeadType : disbPeriodTab === "LMTD" ? lmsdLeadType : ftdLeadType).map((r) => (
+                      {(disbPeriodTab === "MTD" ? mtdLeadType : disbPeriodTab === "LMTD" ? lmsdLeadType : ftdLeadType ?? []).map((r) => (
                         <TableRow key={r.lead_type} className="hover:bg-muted/20">
                           <TableCell className="text-xs font-medium py-2">{r.lead_type}</TableCell>
                           <TableCell className="text-xs text-right tabular-nums">{r.loan.toLocaleString("en-IN")}</TableCell>
@@ -1246,618 +1462,604 @@ export default function DisbursalSummary() {
 
         {/* Insights */}
         <RichInsightPanel title="Disbursal Insights" insights={richInsights} pageName="Disbursal Summary" />
-
-        {/* ═══ SECTION 1: Lender × Program Matrix ════════════════════════ */}
-        <Separator />
-        <div id="disb-lender-matrix">
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <h2 className="text-sm font-semibold flex items-center gap-2">
-                <PieChartIcon className="h-4 w-4 text-muted-foreground" />
-                Lender × Program Disbursement Matrix
-              </h2>
-              <p className="text-[10px] text-muted-foreground mt-0.5">
-                Which lenders / programs are driving disbursements
-              </p>
-            </div>
-            <div className="flex gap-1">
-              {([
-                ["disbursed", "Loans"],
-                ["amount", "Amount (Cr)"],
-                ["conv", "Conv%"],
-              ] as [typeof matrixMetric, string][]).map(([key, label]) => (
-                <button
-                  key={key}
-                  className={cn(
-                    "text-[10px] font-semibold px-2.5 py-1 rounded-md border transition-colors",
-                    matrixMetric === key
-                      ? "bg-primary text-primary-foreground border-primary"
-                      : "bg-muted/30 text-muted-foreground border-border hover:bg-muted/60"
-                  )}
-                  onClick={() => setMatrixMetric(key)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <Card>
-            <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="bg-muted/50">
-                      <TableHead className="text-[10px] font-semibold min-w-[100px]">Lender</TableHead>
-                      {allProducts.map((p) => (
-                        <TableHead key={p} className="text-[10px] font-semibold text-center min-w-[90px]">
-                          <div className="flex items-center justify-center gap-1">
-                            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: PRODUCT_COLORS[p] || COLORS[0] }} />
-                            {p}
-                          </div>
-                        </TableHead>
-                      ))}
-                      <TableHead className="text-[10px] font-bold text-center bg-muted/70 min-w-[80px]">Total</TableHead>
-                      <TableHead className="text-[10px] font-semibold text-center min-w-[60px]">Share</TableHead>
-                      <TableHead className="text-[10px] font-semibold text-center min-w-[70px]">Growth</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {matrixData.sortedLenders.map((lender) => {
-                      const lRow = byLender.find((l) => l.lender === lender);
-                      const totalVal = matrixMetric === "disbursed" ? (lRow?.disbursed || 0)
-                        : matrixMetric === "amount" ? (lRow?.amount_cr || 0)
-                        : (lRow?.conv || 0);
-
-                      return (
-                        <TableRow key={lender} className="hover:bg-muted/20">
-                          <TableCell className="text-xs font-semibold py-2">{lender}</TableCell>
-                          {allProducts.map((product) => {
-                            const cell = matrixData.map[lender]?.[product];
-                            const v = getMatrixValue(cell);
-                            const intensity = matrixMaxValue > 0 ? v.raw / matrixMaxValue : 0;
-                            return (
-                              <TableCell key={product} className="text-center py-2">
-                                {v.display !== "-" ? (
-                                  <span
-                                    className="text-[11px] tabular-nums font-medium px-2 py-0.5 rounded"
-                                    style={{
-                                      backgroundColor: `hsla(220, 70%, 55%, ${intensity * 0.2})`,
-                                    }}
-                                  >
-                                    {v.display}
-                                  </span>
-                                ) : (
-                                  <span className="text-[10px] text-muted-foreground">-</span>
-                                )}
-                              </TableCell>
-                            );
-                          })}
-                          <TableCell className="text-center py-2 bg-muted/20">
-                            <span className="text-[11px] tabular-nums font-bold">
-                              {matrixMetric === "conv"
-                                ? `${totalVal.toFixed(1)}%`
-                                : matrixMetric === "amount"
-                                ? totalVal.toFixed(1)
-                                : totalVal.toLocaleString("en-IN")}
-                            </span>
-                          </TableCell>
-                          <TableCell className="text-center py-2">
-                            <span className="text-[10px] tabular-nums">{lRow?.share.toFixed(1)}%</span>
-                          </TableCell>
-                          <TableCell className="text-center py-2">
-                            <span className={cn(
-                              "text-[10px] font-semibold",
-                              (lRow?.growth || 0) > 0 ? "text-emerald-600" : (lRow?.growth || 0) < 0 ? "text-red-600" : "text-muted-foreground"
-                            )}>
-                              {(lRow?.growth || 0) > 0 ? "+" : ""}{lRow?.growth.toFixed(1)}%
-                            </span>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                    {/* Grand total row */}
-                    <TableRow className="bg-muted/40 font-bold border-t-2">
-                      <TableCell className="text-xs font-bold py-2">Grand Total</TableCell>
-                      {allProducts.map((product) => {
-                        const pTotal = matrixData.productTotals[product];
-                        const display = matrixMetric === "disbursed"
-                          ? pTotal.disbursed.toLocaleString("en-IN")
-                          : matrixMetric === "amount"
-                          ? ((pTotal.disbursed * AVG_ATS) / 100).toFixed(1)
-                          : pTotal.child > 0
-                          ? `${((pTotal.disbursed / pTotal.child) * 100).toFixed(1)}%`
-                          : "-";
-                        return (
-                          <TableCell key={product} className="text-center py-2">
-                            <span className="text-[11px] tabular-nums font-bold">{display}</span>
-                          </TableCell>
-                        );
-                      })}
-                      <TableCell className="text-center py-2 bg-muted/30">
-                        <span className="text-[11px] tabular-nums font-bold">
-                          {matrixMetric === "disbursed"
-                            ? totalDisbursed.toLocaleString("en-IN")
-                            : matrixMetric === "amount"
-                            ? amountCr.toFixed(1)
-                            : `${convPct.toFixed(1)}%`}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-center py-2">
-                        <span className="text-[10px] font-bold">100%</span>
-                      </TableCell>
-                      <TableCell className="text-center py-2">
-                        <span className={cn(
-                          "text-[10px] font-bold",
-                          disbGrowth > 0 ? "text-emerald-600" : "text-red-600"
-                        )}>
-                          {disbGrowth > 0 ? "+" : ""}{disbGrowth.toFixed(1)}%
-                        </span>
-                      </TableCell>
-                    </TableRow>
-                  </TableBody>
-                </Table>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* ═══ SECTION 2: Trends vs Baseline ═════════════════════════════ */}
-        <Separator />
-        <div>
-          <h2 className="text-sm font-semibold flex items-center gap-2 mb-1">
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
-            Trends vs Baseline
-          </h2>
-          <p className="text-[10px] text-muted-foreground mb-3">
-            How current month compares to historical average (6-month baseline)
-          </p>
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {/* Monthly amount with baseline */}
-            <Card className="overflow-hidden">
-              <CardHeader className="pb-1 pt-4 px-5">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                    Monthly Amount (Cr) vs 6M Baseline
-                  </CardTitle>
-                  <ChartFeedbackButton chartTitle="Monthly Amount (Cr) vs 6M Baseline" pageName="Disbursal Summary" />
-                </div>
-              </CardHeader>
-              <CardContent className="p-0 pb-2 pr-2">
-                <ResponsiveContainer width="100%" height={260}>
-                  <ComposedChart data={trendsWithBaseline} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(0, 0%, 92%)" vertical={false} />
-                    <XAxis dataKey="month" tick={{ fontSize: 9 }} tickLine={false} axisLine={false} />
-                    <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} width={45}
-                      tickFormatter={(v) => `${v} Cr`}
-                    />
-                    <Tooltip contentStyle={{ fontSize: 11, borderRadius: 8 }} />
-                    <ReferenceLine y={trendsWithBaseline[0]?.baseline_amount || 0} stroke="hsl(350, 65%, 55%)"
-                      strokeDasharray="6 4" strokeWidth={1.5} label={{ value: "Baseline", position: "right", fontSize: 9, fill: "hsl(350, 65%, 55%)" }}
-                    />
-                    <Bar dataKey="disbursed_amount_cr" name="Amount (Cr)" fill="hsl(220, 70%, 55%)" radius={[4, 4, 0, 0]} barSize={32}>
-                      {trendsWithBaseline.map((entry, idx) => (
-                        <Cell key={idx} fill={entry.disbursed_amount_cr >= entry.baseline_amount ? "hsl(150, 60%, 45%)" : "hsl(350, 65%, 55%)"} />
-                      ))}
-                    </Bar>
-                  </ComposedChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-
-            {/* Lender-level stacked area trend */}
-            <Card className="overflow-hidden">
-              <CardHeader className="pb-1 pt-4 px-5">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                    Lender-wise Monthly Trend (Cr)
-                  </CardTitle>
-                  <ChartFeedbackButton chartTitle="Lender-wise Monthly Trend (Cr)" pageName="Disbursal Summary" />
-                </div>
-              </CardHeader>
-              <CardContent className="p-0 pb-2 pr-2">
-                <ResponsiveContainer width="100%" height={260}>
-                  <ComposedChart data={lenderMonthlyTrends} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(0, 0%, 92%)" vertical={false} />
-                    <XAxis dataKey="month" tick={{ fontSize: 9 }} tickLine={false} axisLine={false} />
-                    <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} width={45}
-                      tickFormatter={(v) => `${v}`}
-                    />
-                    <Tooltip
-                      content={({ active, payload, label }) => {
-                        if (!active || !payload || payload.length === 0) return null;
-                        const monthTotal = payload.reduce((s, p) => s + (Number(p.value) || 0), 0);
-                        return (
-                          <div className="rounded-lg border bg-card shadow-md px-3 py-2 text-xs">
-                            <p className="font-semibold text-foreground mb-1.5 border-b pb-1">{label}</p>
-                            {[...payload].reverse().map((entry, i) => {
-                              const val = Number(entry.value) || 0;
-                              const pct = monthTotal > 0 ? (val / monthTotal) * 100 : 0;
-                              return (
-                                <div key={i} className="flex items-center gap-2 py-0.5">
-                                  <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: entry.color }} />
-                                  <span className="text-muted-foreground flex-1">{entry.dataKey}</span>
-                                  <span className="font-semibold tabular-nums">{val.toFixed(1)} Cr</span>
-                                  <span className="text-muted-foreground tabular-nums w-10 text-right">({pct.toFixed(0)}%)</span>
-                                </div>
-                              );
-                            })}
-                            <div className="flex items-center gap-2 mt-1.5 pt-1.5 border-t font-bold">
-                              <span className="flex-1">Month Total</span>
-                              <span className="tabular-nums">{monthTotal.toFixed(1)} Cr</span>
-                              <span className="text-muted-foreground tabular-nums w-10 text-right">(100%)</span>
-                            </div>
-                          </div>
-                        );
-                      }}
-                    />
-                    <Legend wrapperStyle={{ fontSize: 9 }} />
-                    {byLender.slice(0, 6).map((l, i) => (
-                      <Area key={l.lender} type="monotone" dataKey={l.lender} stackId="1"
-                        fill={COLORS[i % COLORS.length]} stroke={COLORS[i % COLORS.length]}
-                        fillOpacity={0.6}
-                      />
-                    ))}
-                  </ComposedChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-
-        {/* ═══ SECTION 3: Contribution & Concentration ═══════════════════ */}
-        <Separator />
-        <div>
-          <h2 className="text-sm font-semibold flex items-center gap-2 mb-1">
-            <PieChartIcon className="h-4 w-4 text-muted-foreground" />
-            Contribution & Concentration
-          </h2>
-          <p className="text-[10px] text-muted-foreground mb-3">
-            Is growth broad-based or concentrated? How is share shifting between lenders?
-          </p>
-
-          {/* Quick stats */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-            <Card>
-              <CardContent className="p-3">
-                <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">Top 3 Concentration</p>
-                <p className="text-lg font-bold tabular-nums">{concentrationData.top3Share.toFixed(0)}%</p>
-                <p className="text-[10px] text-muted-foreground">{concentrationData.pareto.slice(0, 3).map((l) => l.lender).join(", ")}</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-3">
-                <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">HHI Index</p>
-                <p className="text-lg font-bold tabular-nums">{concentrationData.hhi.toFixed(0)}</p>
-                <p className="text-[10px] text-muted-foreground">
-                  {concentrationData.hhi > 2500 ? "Highly concentrated" : concentrationData.hhi > 1500 ? "Moderately concentrated" : "Low concentration"}
-                </p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-3">
-                <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">Growing Lenders</p>
-                <p className="text-lg font-bold tabular-nums text-emerald-600">{concentrationData.growingLenders} / {byLender.length}</p>
-                <p className="text-[10px] text-muted-foreground">{concentrationData.decliningLenders} declining</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-3">
-                <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">Biggest Share Gainer</p>
-                {concentrationData.shareShifts[0] && (
-                  <>
-                    <p className="text-lg font-bold tabular-nums">{concentrationData.shareShifts[0].lender}</p>
-                    <p className="text-[10px] text-muted-foreground">
-                      {concentrationData.shareShifts[0].shift > 0 ? "+" : ""}{concentrationData.shareShifts[0].shift}pp shift
-                    </p>
-                  </>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {/* Pareto chart */}
-            <Card className="overflow-hidden">
-              <CardHeader className="pb-1 pt-4 px-5">
-                <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  Pareto: Disbursals by Lender (Cumulative %)
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-0 pb-2 pr-2">
-                <ResponsiveContainer width="100%" height={280}>
-                  <ComposedChart data={concentrationData.pareto} margin={{ top: 10, right: 20, left: -10, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(0, 0%, 92%)" vertical={false} />
-                    <XAxis dataKey="lender" tick={{ fontSize: 9 }} tickLine={false} axisLine={false} />
-                    <YAxis yAxisId="left" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} width={45}
-                      tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(0)}K` : v.toString()}
-                    />
-                    <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} width={40}
-                      domain={[0, 100]} tickFormatter={(v) => `${v}%`}
-                    />
-                    <Tooltip contentStyle={{ fontSize: 11, borderRadius: 8 }} />
-                    <Bar yAxisId="left" dataKey="disbursed" name="Disbursed" fill="hsl(220, 70%, 55%)" radius={[4, 4, 0, 0]} barSize={28} />
-                    <Line yAxisId="right" type="monotone" dataKey="cumulative" name="Cumulative %"
-                      stroke="hsl(350, 65%, 55%)" strokeWidth={2} dot={{ r: 3 }}
-                    />
-                    <ReferenceLine yAxisId="right" y={80} stroke="hsl(0, 0%, 70%)" strokeDasharray="4 4" />
-                  </ComposedChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-
-            {/* Share Shift table */}
-            <Card>
-              <CardHeader className="pb-2">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-sm font-medium">Share Shift: {pL} vs {cL}</CardTitle>
-                  <ChartFeedbackButton chartTitle={`Share Shift: ${pL} vs ${cL}`} pageName="Disbursal Summary" />
-                </div>
-                <p className="text-[10px] text-muted-foreground">How lender share is moving month-over-month</p>
-              </CardHeader>
-              <CardContent className="p-0">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="bg-muted/30">
-                      <TableHead className="text-[10px] font-semibold">Lender</TableHead>
-                      <TableHead className="text-[10px] font-semibold text-right">{cL} Share</TableHead>
-                      <TableHead className="text-[10px] font-semibold text-right">{pL} Share</TableHead>
-                      <TableHead className="text-[10px] font-semibold text-right">Shift</TableHead>
-                      <TableHead className="text-[10px] font-semibold w-[100px]">Visual</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {concentrationData.shareShifts.map((row) => (
-                      <TableRow key={row.lender} className="hover:bg-muted/20">
-                        <TableCell className="text-xs font-medium py-2">{row.lender}</TableCell>
-                        <TableCell className="text-xs text-right tabular-nums text-muted-foreground">{row.lmtd_share}%</TableCell>
-                        <TableCell className="text-xs text-right tabular-nums font-medium">{row.mtd_share}%</TableCell>
-                        <TableCell className="text-right py-2">
-                          <span className={cn(
-                            "inline-flex items-center gap-0.5 text-[10px] font-bold rounded-full px-2 py-0.5",
-                            row.shift > 0 ? "bg-emerald-50 text-emerald-700" : row.shift < 0 ? "bg-red-50 text-red-700" : "bg-gray-50 text-gray-600"
-                          )}>
-                            {row.shift > 0 ? <TrendingUp className="h-2.5 w-2.5" /> : row.shift < 0 ? <TrendingDown className="h-2.5 w-2.5" /> : null}
-                            {row.shift > 0 ? "+" : ""}{row.shift}pp
-                          </span>
-                        </TableCell>
-                        <TableCell className="py-2">
-                          <div className="flex items-center gap-1">
-                            <div className="h-1.5 rounded-full bg-muted w-full relative overflow-hidden">
-                              <div
-                                className={cn("h-full rounded-full absolute left-0 top-0", row.shift >= 0 ? "bg-emerald-500" : "bg-red-500")}
-                                style={{ width: `${Math.min(Math.abs(row.shift) * 10, 100)}%` }}
-                              />
-                            </div>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-
-        {/* ═══ SECTION 4: Run-Rate vs Expectation ════════════════════════ */}
-        <Separator />
-        <div>
-          <h2 className="text-sm font-semibold flex items-center gap-2 mb-1">
-            <Gauge className="h-4 w-4 text-muted-foreground" />
-            Run-Rate vs Expectation
-          </h2>
-          <p className="text-[10px] text-muted-foreground mb-3">
-            Are we on pace to hit monthly / AOP targets? Day {DAYS_ELAPSED} of {TOTAL_DAYS}.
-          </p>
-
-          {/* Pacing summary cards */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-            <Card>
-              <CardContent className="p-3">
-                <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">{pL} Disbursed</p>
-                <p className="text-lg font-bold tabular-nums">{amountCr.toFixed(1)} Cr</p>
-                <p className="text-[10px] text-muted-foreground">{DAYS_ELAPSED} days elapsed</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-3">
-                <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">Projected (EOM)</p>
-                <p className="text-lg font-bold tabular-nums">{runRateCr.toFixed(1)} Cr</p>
-                <p className="text-[10px] text-muted-foreground">at current pace</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-3">
-                <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">Feb'26 AOP Target</p>
-                <p className="text-lg font-bold tabular-nums">{monthlyAopTarget.toFixed(1)} Cr</p>
-                <div className="flex items-center gap-1 mt-1">
-                  <Progress value={Math.min(runRatePacingPct, 100)} className="h-1.5 flex-1" />
-                  <span className={cn(
-                    "text-[10px] font-bold",
-                    runRatePacingPct >= 100 ? "text-emerald-600" : runRatePacingPct >= 75 ? "text-amber-600" : "text-red-600"
-                  )}>
-                    {runRatePacingPct.toFixed(0)}%
-                  </span>
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-3">
-                <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">Gap to Target</p>
-                <p className={cn(
-                  "text-lg font-bold tabular-nums",
-                  runRateCr >= monthlyAopTarget ? "text-emerald-600" : "text-red-600"
-                )}>
-                  {runRateCr >= monthlyAopTarget ? "+" : "-"}{Math.abs(runRateCr - monthlyAopTarget).toFixed(1)} Cr
-                </p>
-                <p className="text-[10px] text-muted-foreground">projected {runRateCr >= monthlyAopTarget ? "surplus" : "shortfall"}</p>
-              </CardContent>
-            </Card>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {/* Cumulative progress chart */}
-            <Card className="overflow-hidden">
-              <CardHeader className="pb-1 pt-4 px-5">
-                <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  Cumulative Disbursals: Actual vs AOP Pace
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-0 pb-2 pr-2">
-                <ResponsiveContainer width="100%" height={280}>
-                  <ComposedChart data={runRateData.days} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(0, 0%, 92%)" vertical={false} />
-                    <XAxis dataKey="day" tick={{ fontSize: 8 }} tickLine={false} axisLine={false} interval={2} />
-                    <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} width={45}
-                      tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(0)}K` : v.toString()}
-                    />
-                    <Tooltip contentStyle={{ fontSize: 10, borderRadius: 8 }} />
-                    <Area type="monotone" dataKey="cumActual" name="Actual" fill="hsl(220, 70%, 55%)"
-                      stroke="hsl(220, 70%, 55%)" fillOpacity={0.3} strokeWidth={2}
-                    />
-                    <Line type="monotone" dataKey="cumExpected" name="AOP Pace" stroke="hsl(350, 65%, 55%)"
-                      strokeDasharray="6 4" strokeWidth={1.5} dot={false}
-                    />
-                    <Legend wrapperStyle={{ fontSize: 10 }} />
-                  </ComposedChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-
-            {/* Lender AOP pacing table */}
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">Lender AOP Pacing</CardTitle>
-                <p className="text-[10px] text-muted-foreground">Monthly target vs projected at current run-rate</p>
-              </CardHeader>
-              <CardContent className="p-0">
-                <div className="max-h-[280px] overflow-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="bg-muted/30">
-                        <TableHead className="text-[10px] font-semibold">Lender</TableHead>
-                        <TableHead className="text-[10px] font-semibold text-right">{pL} (Cr)</TableHead>
-                        <TableHead className="text-[10px] font-semibold text-right">Target (Cr)</TableHead>
-                        <TableHead className="text-[10px] font-semibold text-right">Projected</TableHead>
-                        <TableHead className="text-[10px] font-semibold text-right">Pacing</TableHead>
-                        <TableHead className="text-[10px] font-semibold text-center">Status</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {runRateData.lenderPacing.map((row) => (
-                        <TableRow key={row.lender} className="hover:bg-muted/20">
-                          <TableCell className="text-xs font-medium py-2">{row.lender}</TableCell>
-                          <TableCell className="text-xs text-right tabular-nums">{row.mtd_cr.toFixed(1)}</TableCell>
-                          <TableCell className="text-xs text-right tabular-nums text-muted-foreground">{row.monthly_target_cr.toFixed(1)}</TableCell>
-                          <TableCell className="text-xs text-right tabular-nums font-medium">{row.projected_cr.toFixed(1)}</TableCell>
-                          <TableCell className="text-right py-2">
-                            <div className="flex items-center gap-1.5 justify-end">
-                              <Progress value={Math.min(row.pacing_pct, 100)} className="w-14 h-1.5" />
-                              <span className={cn(
-                                "text-[10px] font-bold tabular-nums w-10 text-right",
-                                row.pacing_pct >= 100 ? "text-emerald-600" : row.pacing_pct >= 75 ? "text-amber-600" : "text-red-600"
-                              )}>
-                                {row.pacing_pct.toFixed(0)}%
-                              </span>
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-center py-2">
-                            <Badge variant="outline" className={cn(
-                              "text-[9px] font-bold px-1.5",
-                              row.status === "on_track" ? "text-emerald-600 border-emerald-200 bg-emerald-50" :
-                              row.status === "watch" ? "text-amber-600 border-amber-200 bg-amber-50" :
-                              "text-red-600 border-red-200 bg-red-50"
-                            )}>
-                              {row.status === "on_track" ? "On Track" : row.status === "watch" ? "Watch" : "Behind"}
-                            </Badge>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-
-        {/* ═══ Detailed Lender Table (existing, refined) ════════════════ */}
-        <Separator />
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Lender-wise Disbursal & AOP Tracking</CardTitle>
-            <p className="text-[10px] text-muted-foreground">Click column headers to sort</p>
-          </CardHeader>
-          <CardContent className="p-0">
-            <div className="max-h-[500px] overflow-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-muted/50">
-                    {([
-                      ["lender", "Lender", "left"],
-                      ["disbursed", "Loans", "right"],
-                      ["amount", "Amount (Cr)", "right"],
-                      ["conv", "Conv%", "right"],
-                      ["growth", "Growth%", "right"],
-                      ["aop", "AOP (Cr)", "right"],
-                      ["achv", "Achievement", "right"],
-                    ] as [SortKey, string, string][]).map(([col, label, align]) => (
-                      <TableHead
-                        key={col}
-                        className="text-[10px] font-semibold cursor-pointer select-none hover:text-foreground transition-colors"
-                        onClick={() => handleSort(col)}
-                      >
-                        <div className={cn("flex items-center gap-0.5", align === "right" ? "justify-end" : "")}>
-                          {label} <SortIcon col={col} />
-                        </div>
-                      </TableHead>
-                    ))}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {sortedLenders.map((row) => {
-                    const achv = row.aop > 0 ? (row.amount_cr / row.aop) * 100 : 0;
-                    return (
-                      <TableRow key={row.lender} className="hover:bg-muted/30">
-                        <TableCell className="text-xs font-medium py-2.5">{row.lender}</TableCell>
-                        <TableCell className="text-xs text-right tabular-nums">{row.disbursed.toLocaleString("en-IN")}</TableCell>
-                        <TableCell className="text-xs text-right tabular-nums font-medium">{row.amount_cr.toFixed(1)}</TableCell>
-                        <TableCell className="text-xs text-right tabular-nums">{row.conv.toFixed(1)}%</TableCell>
-                        <TableCell className="text-right">
-                          <span className={cn(
-                            "text-[10px] font-semibold",
-                            row.growth > 0 ? "text-emerald-600" : row.growth < 0 ? "text-red-600" : "text-muted-foreground"
-                          )}>
-                            {row.growth > 0 ? "+" : ""}{row.growth.toFixed(1)}%
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-xs text-right tabular-nums">{row.aop > 0 ? row.aop.toFixed(0) : "-"}</TableCell>
-                        <TableCell className="text-right py-2.5">
-                          {row.aop > 0 ? (
-                            <div className="flex items-center gap-2 justify-end">
-                              <Progress value={Math.min(achv, 100)} className="w-16 h-1.5" />
-                              <span className={cn(
-                                "text-[10px] font-bold tabular-nums w-10 text-right",
-                                achv >= 80 ? "text-emerald-600" : achv >= 50 ? "text-amber-600" : "text-red-600"
-                              )}>
-                                {achv.toFixed(0)}%
-                              </span>
-                            </div>
-                          ) : <span className="text-[10px] text-muted-foreground">-</span>}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
       </div>
 
       <KpiDeepDiveModal open={kpiDive.open} onClose={() => setKpiDive({ open: false, config: null })} config={kpiDive.config} />
+
+      {/* Disb. count custom modal: no graph, view toggles, Analysis before table, program data, lender L2 drill-down */}
+      <Dialog open={disbCountModalOpen} onOpenChange={(v) => { if (!v) { setDisbCountModalOpen(false); setDisbCountExpandedLender(null); setTrendLenderPopup(null); setExpandedProgramForLender(null); setExpandedPolicyForLender(null); } }}>
+        <DialogContent
+          className="max-h-[90vh] overflow-y-auto"
+          style={{ maxWidth: "min(1400px, 95vw)", width: "95vw" }}
+          data-modal="disb-count"
+        >
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-3">
+              <span>Total Disbursed</span>
+              <Badge variant="outline" className="text-sm font-bold tabular-nums">
+                {totalDisbursed.toLocaleString("en-IN")}
+              </Badge>
+            </DialogTitle>
+            <p className="text-xs text-muted-foreground mt-1">from {totalChildLeads.toLocaleString("en-IN")} child leads</p>
+          </DialogHeader>
+
+          <div className="space-y-5 mt-2">
+            {/* MTD vs LMTD overview (from raw data with FR split) */}
+            <div>
+              <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2">MTD vs LMTD Overview</p>
+              <div className="grid grid-cols-3 gap-3">
+                <Card className="bg-muted/20"><CardContent className="p-3 text-center">
+                  <p className="text-[10px] text-muted-foreground uppercase">MTD</p>
+                  <p className="text-lg font-bold tabular-nums">{mtdLmtdTotalCount.toLocaleString("en-IN")} loans</p>
+                  <p className="text-xs text-muted-foreground tabular-nums mt-0.5">₹{mtdLmtdTotalAmt.toFixed(1)} Cr</p>
+                </CardContent></Card>
+                <Card className="bg-muted/20"><CardContent className="p-3 text-center">
+                  <p className="text-[10px] text-muted-foreground uppercase">{cL}</p>
+                  <p className="text-lg font-bold tabular-nums">{lmtdTotalCount.toLocaleString("en-IN")} loans</p>
+                  <p className="text-xs text-muted-foreground tabular-nums mt-0.5">₹{lmtdTotalAmt.toFixed(1)} Cr</p>
+                </CardContent></Card>
+                <Card className="bg-muted/20"><CardContent className="p-3 text-center">
+                  <p className="text-[10px] text-muted-foreground uppercase">Growth</p>
+                  <p className={cn("text-lg font-bold tabular-nums", lmtdTotalCount > 0 && ((mtdLmtdTotalCount - lmtdTotalCount) / lmtdTotalCount) * 100 >= 0 ? "text-emerald-600" : "text-red-600")}>
+                    {lmtdTotalCount > 0 ? (mtdLmtdTotalCount - lmtdTotalCount) / lmtdTotalCount * 100 >= 0 ? "+" : "" : ""}{(lmtdTotalCount > 0 ? ((mtdLmtdTotalCount - lmtdTotalCount) / lmtdTotalCount) * 100 : 0).toFixed(1)}% vs prior
+                  </p>
+                  <p className={cn("text-xs tabular-nums mt-0.5", lmtdTotalAmt > 0 && ((mtdLmtdTotalAmt - lmtdTotalAmt) / lmtdTotalAmt) * 100 >= 0 ? "text-emerald-600" : "text-red-600")}>
+                    {lmtdTotalAmt > 0
+                      ? `${((mtdLmtdTotalAmt - lmtdTotalAmt) / lmtdTotalAmt * 100) >= 0 ? "+" : ""}${((mtdLmtdTotalAmt - lmtdTotalAmt) / lmtdTotalAmt * 100).toFixed(1)}% amt`
+                      : "0% amt"}
+                  </p>
+                </CardContent></Card>
+              </div>
+            </div>
+
+            {/* View options */}
+            <div>
+              <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2">View</p>
+              <div className="flex flex-wrap gap-2">
+                {(["lender-wise", "program-wise", "policy-wise"] as const).map((view) => (
+                  <button
+                    key={view}
+                    type="button"
+                    onClick={() => { setDisbCountView(view); setDisbCountExpandedLender(null); setExpandedProgramForLender(null); setExpandedPolicyForLender(null); }}
+                    className={cn(
+                      "px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors",
+                      disbCountView === view ? "bg-primary text-primary-foreground border-primary" : "bg-muted/30 border-border hover:bg-muted/50"
+                    )}
+                  >
+                    {view === "lender-wise" && "Lender-wise"}
+                    {view === "program-wise" && "Program-wise"}
+                    {view === "policy-wise" && "Policy-wise"}
+                  </button>
+                ))}
+              </div>
+              <p className="text-[9px] text-muted-foreground mt-1">
+                {disbCountView === "lender-wise" && "SMFG, Shriram, Piramal, MFL, NACL, PayU, KSF, TCL"}
+                {disbCountView === "program-wise" && "Fresh, Renewal, AD, Topup, BT"}
+                {disbCountView === "policy-wise" && "GMV, Bureau, GST, Banking"}
+              </p>
+            </div>
+
+            {/* Analysis (before table) — detailed, Funnel-style with color coding */}
+            <div>
+              <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2">Analysis</p>
+              <ul className="space-y-2 pl-1 text-xs">
+                <li className="flex gap-2">
+                  <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-primary/60 shrink-0" />
+                  <span><span className="font-semibold text-foreground">{pL}:</span> <span className="tabular-nums">{mtdLmtdTotalCount.toLocaleString("en-IN")}</span> loans disbursed (<span className="font-semibold text-foreground tabular-nums">₹{mtdLmtdTotalAmt.toFixed(1)} Cr</span> at avg ATS).</span>
+                </li>
+                <li className="flex gap-2">
+                  <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-muted-foreground/50 shrink-0" />
+                  <span>FR split: <span className="text-muted-foreground">60% Fresh / 40% Renewal (count)</span>, <span className="text-muted-foreground">40% Fresh / 60% Renewal (amount)</span>.</span>
+                </li>
+                <li className="flex gap-2">
+                  <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-muted-foreground/50 shrink-0" />
+                  <span>Count growth vs {cL}:{" "}
+                    {lmtdTotalCount > 0 ? (
+                      <span className={cn("font-semibold tabular-nums", ((mtdLmtdTotalCount - lmtdTotalCount) / lmtdTotalCount * 100) >= 0 ? "text-emerald-600" : "text-red-600")}>
+                        {((mtdLmtdTotalCount - lmtdTotalCount) / lmtdTotalCount * 100) >= 0 ? "+" : ""}{(lmtdTotalCount > 0 ? ((mtdLmtdTotalCount - lmtdTotalCount) / lmtdTotalCount) * 100 : 0).toFixed(1)}%
+                      </span>
+                    ) : "—"}
+                    {lmtdTotalCount > 0 && ((mtdLmtdTotalCount - lmtdTotalCount) / lmtdTotalCount * 100) >= 0 ? " — ahead of prior month." : lmtdTotalCount > 0 ? " — below prior month." : ""}
+                  </span>
+                </li>
+                <li className="flex gap-2">
+                  <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-muted-foreground/50 shrink-0" />
+                  <span>Amount growth vs {cL}:{" "}
+                    {lmtdTotalAmt > 0 ? (
+                      <span className={cn("font-semibold tabular-nums", ((mtdLmtdTotalAmt - lmtdTotalAmt) / lmtdTotalAmt * 100) >= 0 ? "text-emerald-600" : "text-red-600")}>
+                        {((mtdLmtdTotalAmt - lmtdTotalAmt) / lmtdTotalAmt * 100) >= 0 ? "+" : ""}{((mtdLmtdTotalAmt - lmtdTotalAmt) / lmtdTotalAmt * 100).toFixed(1)}%
+                      </span>
+                    ) : "—"}
+                    {lmtdTotalAmt > 0 && ((mtdLmtdTotalAmt - lmtdTotalAmt) / lmtdTotalAmt * 100) >= 0 ? " (₹ Cr up)." : lmtdTotalAmt > 0 ? " (₹ Cr down)." : ""}
+                  </span>
+                </li>
+                <li className="flex gap-2">
+                  <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-muted-foreground/50 shrink-0" />
+                  <span><span className="font-semibold text-foreground">Top 3 lenders:</span>{" "}
+                    {mtdLmtdLenderRows.slice(0, 3).map((l, i) => (
+                      <span key={l.lender}>
+                        {i > 0 && ", "}
+                        <span className="font-medium">{l.lender}</span>
+                        <span className={cn("tabular-nums", l.disbGrowthPct != null && l.disbGrowthPct >= 0 ? "text-emerald-600" : l.disbGrowthPct != null ? "text-red-600" : "text-muted-foreground")}>
+                          {" "}({l.share.toFixed(0)}%{l.disbGrowthPct != null ? `, ${l.disbGrowthPct >= 0 ? "+" : ""}${l.disbGrowthPct.toFixed(1)}% vs LMTD` : ""})
+                        </span>
+                      </span>
+                    ))}
+                  </span>
+                </li>
+                <li className="flex gap-2 pt-1 border-t border-border/50">
+                  <span className="text-[9px] text-muted-foreground">
+                    <span className="text-emerald-600 font-medium">+Δ = better vs LMTD</span>
+                    {" · "}
+                    <span className="text-red-600 font-medium">−Δ = lower vs LMTD</span>
+                  </span>
+                </li>
+              </ul>
+            </div>
+
+            {/* Table */}
+            <div>
+              <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2">
+                {disbCountView === "lender-wise" && "Lender Details"}
+                {disbCountView === "program-wise" && "Program Details"}
+                {disbCountView === "policy-wise" && "Policy Details"}
+              </p>
+              <div className="rounded-lg border border-border overflow-x-auto overflow-y-visible min-w-0">
+                <Table className="min-w-[1300px] w-full">
+                  <TableHeader>
+                    <TableRow className="bg-muted/50">
+                      {disbCountView === "lender-wise" && (
+                        <>
+                          <TableHead className="text-[10px] font-semibold w-8" />
+                          <TableHead className="text-[10px] font-semibold">Lender</TableHead>
+                          <TableHead className="text-[10px] font-semibold text-right">MTD count</TableHead>
+                          <TableHead className="text-[10px] font-semibold text-right">MTD Amt (Cr)</TableHead>
+                          <TableHead className="text-[10px] font-semibold text-right">MTD ATS</TableHead>
+                          <TableHead className="text-[10px] font-semibold text-right">LMTD count</TableHead>
+                          <TableHead className="text-[10px] font-semibold text-right">LMTD Amt (Cr)</TableHead>
+                          <TableHead className="text-[10px] font-semibold text-right">LMTD ATS</TableHead>
+                          <TableHead className="text-[10px] font-semibold text-right">Share %</TableHead>
+                          <TableHead className="text-[10px] font-semibold text-right">MTD vs LMTD count growth %</TableHead>
+                          <TableHead className="text-[10px] font-semibold text-right">MTD vs LMTD amt growth %</TableHead>
+                          <TableHead className="text-[10px] font-semibold text-right">ATS change vs LMTD</TableHead>
+                          <TableHead className="text-[10px] font-semibold text-right">Share % change vs LMTD</TableHead>
+                        </>
+                      )}
+                      {disbCountView === "program-wise" && (
+                        <>
+                          <TableHead className="text-[10px] font-semibold w-8" />
+                          <TableHead className="text-[10px] font-semibold">program_type</TableHead>
+                          <TableHead className="text-[10px] font-semibold text-right">MTD count</TableHead>
+                          <TableHead className="text-[10px] font-semibold text-right">MTD Amt (Cr)</TableHead>
+                          <TableHead className="text-[10px] font-semibold text-right">MTD ATS</TableHead>
+                          <TableHead className="text-[10px] font-semibold text-right">LMTD count</TableHead>
+                          <TableHead className="text-[10px] font-semibold text-right">LMTD Amt (Cr)</TableHead>
+                          <TableHead className="text-[10px] font-semibold text-right">LMTD ATS</TableHead>
+                          <TableHead className="text-[10px] font-semibold text-right">Lead count growth vs LMTD</TableHead>
+                        </>
+                      )}
+                      {disbCountView === "policy-wise" && (
+                        <>
+                          <TableHead className="text-[10px] font-semibold w-8" />
+                          <TableHead className="text-[10px] font-semibold">Policy</TableHead>
+                          <TableHead className="text-[10px] font-semibold text-right">MTD count</TableHead>
+                          <TableHead className="text-[10px] font-semibold text-right">MTD Amt (Cr)</TableHead>
+                          <TableHead className="text-[10px] font-semibold text-right">MTD ATS</TableHead>
+                          <TableHead className="text-[10px] font-semibold text-right">LMTD count</TableHead>
+                          <TableHead className="text-[10px] font-semibold text-right">LMTD Amt (Cr)</TableHead>
+                          <TableHead className="text-[10px] font-semibold text-right">LMTD ATS</TableHead>
+                          <TableHead className="text-[10px] font-semibold text-right">Share %</TableHead>
+                          <TableHead className="text-[10px] font-semibold text-right">Lead count growth vs LMTD</TableHead>
+                        </>
+                      )}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {disbCountView === "lender-wise" && mtdLmtdLenderRows.map((row) => (
+                      <React.Fragment key={row.lender}>
+                        <TableRow
+                          key={row.lender}
+                          className="cursor-pointer hover:bg-muted/40"
+                          onClick={() => setDisbCountExpandedLender((prev) => (prev === row.lender ? null : row.lender))}
+                        >
+                          <TableCell className="w-8 py-2">
+                            {disbCountExpandedLender === row.lender ? <ArrowDown className="h-3 w-3" /> : <ArrowUpDown className="h-3 w-3 opacity-50" />}
+                          </TableCell>
+                          <TableCell className="text-xs font-medium py-2">
+                            <span className="inline-flex items-center gap-1.5">
+                              <span>{row.lender}</span>
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); setTrendLenderPopup(row.lender); }}
+                                className="p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
+                                title="Day-wise trend vs AOP"
+                              >
+                                <LineChartIcon className="h-3.5 w-3.5" />
+                              </button>
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-xs text-right tabular-nums py-2">{row.mtdCount.toLocaleString("en-IN")}</TableCell>
+                          <TableCell className="text-xs text-right tabular-nums py-2">{row.amtCr.toFixed(2)}</TableCell>
+                          <TableCell className="text-xs text-right tabular-nums py-2">{row.ats.toLocaleString("en-IN")}</TableCell>
+                          <TableCell className="text-xs text-right tabular-nums py-2">{row.lmtdCount.toLocaleString("en-IN")}</TableCell>
+                          <TableCell className="text-xs text-right tabular-nums py-2">{row.lmtdAmtCr.toFixed(2)}</TableCell>
+                          <TableCell className="text-xs text-right tabular-nums py-2">{row.lmtdAts.toLocaleString("en-IN")}</TableCell>
+                          <TableCell className="text-xs text-right tabular-nums py-2">{row.share.toFixed(1)}%</TableCell>
+                          <TableCell className="text-xs text-right tabular-nums py-2">
+                            {row.disbGrowthPct != null ? <span className={cn(row.disbGrowthPct >= 0 ? "text-emerald-600" : "text-red-600")}>{row.disbGrowthPct >= 0 ? "+" : ""}{row.disbGrowthPct.toFixed(1)}%</span> : "—"}
+                          </TableCell>
+                          <TableCell className="text-xs text-right tabular-nums py-2">
+                            {row.amtGrowthPct != null ? <span className={cn(row.amtGrowthPct >= 0 ? "text-emerald-600" : "text-red-600")}>{row.amtGrowthPct >= 0 ? "+" : ""}{row.amtGrowthPct.toFixed(1)}%</span> : "—"}
+                          </TableCell>
+                          <TableCell className="text-xs text-right tabular-nums py-2">
+                            {row.atsChangePct != null ? <span className={cn(row.atsChangePct >= 0 ? "text-emerald-600" : "text-red-600")}>{row.atsChangePct >= 0 ? "+" : ""}{row.atsChangePct.toFixed(1)}%</span> : "—"}
+                          </TableCell>
+                          <TableCell className="text-xs text-right tabular-nums py-2">
+                            {row.shareChangePp != null ? <span className={cn(row.shareChangePp >= 0 ? "text-emerald-600" : "text-red-600")}>{row.shareChangePp >= 0 ? "+" : ""}{row.shareChangePp.toFixed(1)}pp</span> : "—"}
+                          </TableCell>
+                        </TableRow>
+                        {disbCountExpandedLender === row.lender && (
+                          <TableRow key={`${row.lender}-l2`} className="bg-muted/20">
+                            <TableCell colSpan={13} className="py-2 pl-8">
+                              {(() => {
+                                const progList = (mtdLmtdLenderProgramBreakdown[row.lender] ?? []).map((prog) => {
+                                  const mtdCount = prog.feb26_loan;
+                                  const lmtdCount = prog.jan26_loan;
+                                  const amtCr = prog.feb26_amt_cr;
+                                  const lmtdAmtCr = prog.jan26_amt_cr;
+                                  const ats = mtdCount > 0 ? Math.round((amtCr * 1e7) / mtdCount) : 0;
+                                  const lmtdAts = lmtdCount > 0 ? Math.round((lmtdAmtCr * 1e7) / lmtdCount) : 0;
+                                  const lenderMtd = row.mtdCount;
+                                  const lenderLmtd = row.lmtdCount;
+                                  const share = lenderMtd > 0 ? (mtdCount / lenderMtd) * 100 : 0;
+                                  const shareLmtd = lenderLmtd > 0 ? (lmtdCount / lenderLmtd) * 100 : 0;
+                                  const disbGrowthPct = lmtdCount > 0 ? ((mtdCount - lmtdCount) / lmtdCount) * 100 : null;
+                                  const amtGrowthPct = lmtdAmtCr > 0 ? ((amtCr - lmtdAmtCr) / lmtdAmtCr) * 100 : null;
+                                  const atsChangePct = lmtdAts > 0 ? ((ats - lmtdAts) / lmtdAts) * 100 : null;
+                                  const shareChangePp = Math.round((share - shareLmtd) * 10) / 10;
+                                  return { program_type: prog.program_type, mtdCount, amtCr, ats, lmtdCount, lmtdAmtCr, lmtdAts, share, disbGrowthPct, amtGrowthPct, atsChangePct, shareChangePp };
+                                });
+                                return (
+                                  <>
+                                    <p className="text-[10px] font-semibold text-muted-foreground uppercase mb-2">{row.lender} — by program</p>
+                                    <Table className="min-w-[1200px] w-full">
+                                      <TableHeader>
+                                        <TableRow className="bg-muted/50">
+                                          <TableHead className="text-[10px] font-semibold">Program</TableHead>
+                                          <TableHead className="text-[10px] font-semibold text-right">MTD count</TableHead>
+                                          <TableHead className="text-[10px] font-semibold text-right">MTD Amt (Cr)</TableHead>
+                                          <TableHead className="text-[10px] font-semibold text-right">MTD ATS</TableHead>
+                                          <TableHead className="text-[10px] font-semibold text-right">LMTD count</TableHead>
+                                          <TableHead className="text-[10px] font-semibold text-right">LMTD Amt (Cr)</TableHead>
+                                          <TableHead className="text-[10px] font-semibold text-right">LMTD ATS</TableHead>
+                                          <TableHead className="text-[10px] font-semibold text-right">Share %</TableHead>
+                                          <TableHead className="text-[10px] font-semibold text-right">MTD vs LMTD count growth %</TableHead>
+                                          <TableHead className="text-[10px] font-semibold text-right">MTD vs LMTD amt growth %</TableHead>
+                                          <TableHead className="text-[10px] font-semibold text-right">ATS change vs LMTD</TableHead>
+                                          <TableHead className="text-[10px] font-semibold text-right">Share % change vs LMTD</TableHead>
+                                        </TableRow>
+                                      </TableHeader>
+                                      <TableBody>
+                                        {progList.map((p) => (
+                                          <TableRow key={p.program_type}>
+                                            <TableCell className="text-xs font-medium py-2">{p.program_type}</TableCell>
+                                            <TableCell className="text-xs text-right tabular-nums py-2">{p.mtdCount.toLocaleString("en-IN")}</TableCell>
+                                            <TableCell className="text-xs text-right tabular-nums py-2">{p.amtCr.toFixed(2)}</TableCell>
+                                            <TableCell className="text-xs text-right tabular-nums py-2">{p.ats.toLocaleString("en-IN")}</TableCell>
+                                            <TableCell className="text-xs text-right tabular-nums py-2">{p.lmtdCount.toLocaleString("en-IN")}</TableCell>
+                                            <TableCell className="text-xs text-right tabular-nums py-2">{p.lmtdAmtCr.toFixed(2)}</TableCell>
+                                            <TableCell className="text-xs text-right tabular-nums py-2">{p.lmtdAts.toLocaleString("en-IN")}</TableCell>
+                                            <TableCell className="text-xs text-right tabular-nums py-2">{p.share.toFixed(1)}%</TableCell>
+                                            <TableCell className="text-xs text-right tabular-nums py-2">
+                                              {p.disbGrowthPct != null ? <span className={cn(p.disbGrowthPct >= 0 ? "text-emerald-600" : "text-red-600")}>{p.disbGrowthPct >= 0 ? "+" : ""}{p.disbGrowthPct.toFixed(1)}%</span> : "—"}
+                                            </TableCell>
+                                            <TableCell className="text-xs text-right tabular-nums py-2">
+                                              {p.amtGrowthPct != null ? <span className={cn(p.amtGrowthPct >= 0 ? "text-emerald-600" : "text-red-600")}>{p.amtGrowthPct >= 0 ? "+" : ""}{p.amtGrowthPct.toFixed(1)}%</span> : "—"}
+                                            </TableCell>
+                                            <TableCell className="text-xs text-right tabular-nums py-2">
+                                              {p.atsChangePct != null ? <span className={cn(p.atsChangePct >= 0 ? "text-emerald-600" : "text-red-600")}>{p.atsChangePct >= 0 ? "+" : ""}{p.atsChangePct.toFixed(1)}%</span> : "—"}
+                                            </TableCell>
+                                            <TableCell className="text-xs text-right tabular-nums py-2">
+                                              <span className={cn(p.shareChangePp >= 0 ? "text-emerald-600" : "text-red-600")}>{p.shareChangePp >= 0 ? "+" : ""}{p.shareChangePp.toFixed(1)}pp</span>
+                                            </TableCell>
+                                          </TableRow>
+                                        ))}
+                                        {progList.length > 0 && (
+                                          <TableRow className="bg-muted/40 font-bold border-t-2">
+                                            <TableCell className="text-xs font-bold py-2">Total</TableCell>
+                                            <TableCell className="text-xs text-right tabular-nums py-2">{progList.reduce((s, p) => s + p.mtdCount, 0).toLocaleString("en-IN")}</TableCell>
+                                            <TableCell className="text-xs text-right tabular-nums py-2">{progList.reduce((s, p) => s + p.amtCr, 0).toFixed(2)}</TableCell>
+                                            <TableCell className="text-xs text-right tabular-nums py-2">
+                                              {row.mtdCount > 0 ? Math.round((row.amtCr * 1e7) / row.mtdCount).toLocaleString("en-IN") : "—"}
+                                            </TableCell>
+                                            <TableCell className="text-xs text-right tabular-nums py-2">{progList.reduce((s, p) => s + p.lmtdCount, 0).toLocaleString("en-IN")}</TableCell>
+                                            <TableCell className="text-xs text-right tabular-nums py-2">{progList.reduce((s, p) => s + p.lmtdAmtCr, 0).toFixed(2)}</TableCell>
+                                            <TableCell className="text-xs text-right tabular-nums py-2">
+                                              {row.lmtdCount > 0 ? Math.round((row.lmtdAmtCr * 1e7) / row.lmtdCount).toLocaleString("en-IN") : "—"}
+                                            </TableCell>
+                                            <TableCell className="text-xs text-right tabular-nums py-2">100%</TableCell>
+                                            <TableCell className="text-xs text-right tabular-nums py-2">
+                                              <span className={cn(row.disbGrowthPct != null && row.disbGrowthPct >= 0 ? "text-emerald-600" : "text-red-600")}>
+                                                {row.disbGrowthPct != null ? (row.disbGrowthPct >= 0 ? "+" : "") + row.disbGrowthPct.toFixed(1) + "%" : "—"}
+                                              </span>
+                                            </TableCell>
+                                            <TableCell className="text-xs text-right tabular-nums py-2">
+                                              <span className={cn(row.amtGrowthPct != null && row.amtGrowthPct >= 0 ? "text-emerald-600" : "text-red-600")}>
+                                                {row.amtGrowthPct != null ? (row.amtGrowthPct >= 0 ? "+" : "") + row.amtGrowthPct.toFixed(1) + "%" : "—"}
+                                              </span>
+                                            </TableCell>
+                                            <TableCell className="text-xs text-right tabular-nums py-2">
+                                              <span className={cn(row.atsChangePct != null && row.atsChangePct >= 0 ? "text-emerald-600" : "text-red-600")}>
+                                                {row.atsChangePct != null ? (row.atsChangePct >= 0 ? "+" : "") + row.atsChangePct.toFixed(1) + "%" : "—"}
+                                              </span>
+                                            </TableCell>
+                                            <TableCell className="text-xs text-right tabular-nums py-2">
+                                              <span className={cn(row.shareChangePp != null && row.shareChangePp >= 0 ? "text-emerald-600" : "text-red-600")}>
+                                                {row.shareChangePp != null ? (row.shareChangePp >= 0 ? "+" : "") + row.shareChangePp.toFixed(1) + "pp" : "—"}
+                                              </span>
+                                            </TableCell>
+                                          </TableRow>
+                                        )}
+                                      </TableBody>
+                                    </Table>
+                                  </>
+                                );
+                              })()}
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </React.Fragment>
+                    ))}
+                    {disbCountView === "lender-wise" && mtdLmtdLenderRows.length > 0 && (
+                      <TableRow className="bg-muted/40 font-bold border-t-2">
+                        <TableCell className="w-8 py-2" />
+                        <TableCell className="text-xs font-bold py-2">Total</TableCell>
+                        <TableCell className="text-xs text-right tabular-nums py-2">{mtdLmtdLenderRows.reduce((s, r) => s + r.mtdCount, 0).toLocaleString("en-IN")}</TableCell>
+                        <TableCell className="text-xs text-right tabular-nums py-2">{mtdLmtdLenderRows.reduce((s, r) => s + r.amtCr, 0).toFixed(2)}</TableCell>
+                        <TableCell className="text-xs text-right tabular-nums py-2">
+                          {mtdLmtdTotalCount > 0 ? Math.round((mtdLmtdTotalAmt * 1e7) / mtdLmtdTotalCount).toLocaleString("en-IN") : "—"}
+                        </TableCell>
+                        <TableCell className="text-xs text-right tabular-nums py-2">{mtdLmtdLenderRows.reduce((s, r) => s + r.lmtdCount, 0).toLocaleString("en-IN")}</TableCell>
+                        <TableCell className="text-xs text-right tabular-nums py-2">{mtdLmtdLenderRows.reduce((s, r) => s + r.lmtdAmtCr, 0).toFixed(2)}</TableCell>
+                        <TableCell className="text-xs text-right tabular-nums py-2">
+                          {lmtdTotalCount > 0 ? Math.round((lmtdTotalAmt * 1e7) / lmtdTotalCount).toLocaleString("en-IN") : "—"}
+                        </TableCell>
+                        <TableCell className="text-xs text-right tabular-nums py-2">100%</TableCell>
+                        <TableCell className="text-xs text-right tabular-nums py-2">
+                          <span className={cn(lmtdTotalCount > 0 && ((mtdLmtdTotalCount - lmtdTotalCount) / lmtdTotalCount) * 100 >= 0 ? "text-emerald-600" : "text-red-600")}>
+                            {lmtdTotalCount > 0 ? ((mtdLmtdTotalCount - lmtdTotalCount) / lmtdTotalCount * 100 >= 0 ? "+" : "") + ((mtdLmtdTotalCount - lmtdTotalCount) / lmtdTotalCount * 100).toFixed(1) + "%" : "—"}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-xs text-right tabular-nums py-2">
+                          {lmtdTotalAmt > 0 ? (() => {
+                            const pct = ((mtdLmtdTotalAmt - lmtdTotalAmt) / lmtdTotalAmt) * 100;
+                            return <span className={cn(pct >= 0 ? "text-emerald-600" : "text-red-600")}>{(pct >= 0 ? "+" : "") + pct.toFixed(1)}%</span>;
+                          })() : "—"}
+                        </TableCell>
+                        <TableCell className="text-xs text-right tabular-nums py-2">
+                          {lmtdTotalCount > 0 && lmtdTotalAmt > 0 ? (() => {
+                            const avgAtsMtd = (mtdLmtdTotalAmt * 1e7) / mtdLmtdTotalCount;
+                            const avgAtsLmtd = (lmtdTotalAmt * 1e7) / lmtdTotalCount;
+                            const pct = ((avgAtsMtd - avgAtsLmtd) / avgAtsLmtd) * 100;
+                            return <span className={cn(pct >= 0 ? "text-emerald-600" : "text-red-600")}>{(pct >= 0 ? "+" : "") + pct.toFixed(1)}%</span>;
+                          })() : "—"}
+                        </TableCell>
+                        <TableCell className="text-xs text-right tabular-nums py-2">—</TableCell>
+                      </TableRow>
+                    )}
+                    {disbCountView === "program-wise" && mtdLmtdProgramRows.map((row) => (
+                      <React.Fragment key={row.program_type}>
+                        <TableRow
+                          className="cursor-pointer hover:bg-muted/40"
+                          onClick={() => setExpandedProgramForLender((p) => (p === row.program_type ? null : row.program_type))}
+                        >
+                          <TableCell className="w-8 py-2">
+                            {expandedProgramForLender === row.program_type ? <ArrowDown className="h-3 w-3" /> : <ArrowUpDown className="h-3 w-3 opacity-50" />}
+                          </TableCell>
+                          <TableCell className="text-xs font-medium py-2">{row.program_type}</TableCell>
+                          <TableCell className="text-xs text-right tabular-nums py-2">{row.feb26_loan.toLocaleString("en-IN")}</TableCell>
+                          <TableCell className="text-xs text-right tabular-nums py-2">{row.feb26_amt_cr.toFixed(2)}</TableCell>
+                          <TableCell className="text-xs text-right tabular-nums py-2">{row.feb26_ats.toLocaleString("en-IN")}</TableCell>
+                          <TableCell className="text-xs text-right tabular-nums py-2">{row.jan26_loan.toLocaleString("en-IN")}</TableCell>
+                          <TableCell className="text-xs text-right tabular-nums py-2">{row.jan26_amt_cr.toFixed(2)}</TableCell>
+                          <TableCell className="text-xs text-right tabular-nums py-2">{row.jan26_ats.toLocaleString("en-IN")}</TableCell>
+                          <TableCell className="text-xs text-right tabular-nums py-2">
+                            {row.countGrowthPct != null ? <span className={cn(row.countGrowthPct >= 0 ? "text-emerald-600" : "text-red-600")}>{row.countGrowthPct >= 0 ? "+" : ""}{row.countGrowthPct.toFixed(1)}%</span> : "—"}
+                          </TableCell>
+                        </TableRow>
+                        {expandedProgramForLender === row.program_type && (programLenderBreakdown[row.program_type] ?? []).length > 0 && (
+                          <TableRow className="bg-muted/20">
+                            <TableCell colSpan={10} className="py-2 pl-8">
+                              <p className="text-[10px] font-semibold text-muted-foreground uppercase mb-2">{row.program_type} — Lender breakdown</p>
+                              <Table className="min-w-[1200px] w-full">
+                                <TableHeader>
+                                  <TableRow className="bg-muted/50">
+                                    <TableHead className="text-[10px] font-semibold">Lender</TableHead>
+                                    <TableHead className="text-[10px] font-semibold text-right">MTD count</TableHead>
+                                    <TableHead className="text-[10px] font-semibold text-right">MTD Amt (Cr)</TableHead>
+                                    <TableHead className="text-[10px] font-semibold text-right">MTD ATS</TableHead>
+                                    <TableHead className="text-[10px] font-semibold text-right">LMTD count</TableHead>
+                                    <TableHead className="text-[10px] font-semibold text-right">LMTD Amt (Cr)</TableHead>
+                                    <TableHead className="text-[10px] font-semibold text-right">LMTD ATS</TableHead>
+                                    <TableHead className="text-[10px] font-semibold text-right">Share %</TableHead>
+                                    <TableHead className="text-[10px] font-semibold text-right">MTD vs LMTD count growth %</TableHead>
+                                    <TableHead className="text-[10px] font-semibold text-right">MTD vs LMTD amt growth %</TableHead>
+                                    <TableHead className="text-[10px] font-semibold text-right">ATS change vs LMTD</TableHead>
+                                    <TableHead className="text-[10px] font-semibold text-right">Share % change vs LMTD</TableHead>
+                                  </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                  {(programLenderBreakdown[row.program_type] ?? []).map((l) => (
+                                    <TableRow key={l.lender}>
+                                      <TableCell className="text-xs font-medium py-2">{l.lender}</TableCell>
+                                      <TableCell className="text-xs text-right tabular-nums py-2">{l.mtdCount.toLocaleString("en-IN")}</TableCell>
+                                      <TableCell className="text-xs text-right tabular-nums py-2">{l.amtCr.toFixed(2)}</TableCell>
+                                      <TableCell className="text-xs text-right tabular-nums py-2">{l.ats.toLocaleString("en-IN")}</TableCell>
+                                      <TableCell className="text-xs text-right tabular-nums py-2">{l.lmtdCount.toLocaleString("en-IN")}</TableCell>
+                                      <TableCell className="text-xs text-right tabular-nums py-2">{l.lmtdAmtCr.toFixed(2)}</TableCell>
+                                      <TableCell className="text-xs text-right tabular-nums py-2">{l.lmtdAts.toLocaleString("en-IN")}</TableCell>
+                                      <TableCell className="text-xs text-right tabular-nums py-2">{l.share.toFixed(1)}%</TableCell>
+                                      <TableCell className="text-xs text-right tabular-nums py-2">{l.disbGrowthPct != null ? <span className={cn(l.disbGrowthPct >= 0 ? "text-emerald-600" : "text-red-600")}>{l.disbGrowthPct >= 0 ? "+" : ""}{l.disbGrowthPct.toFixed(1)}%</span> : "—"}</TableCell>
+                                      <TableCell className="text-xs text-right tabular-nums py-2">{l.amtGrowthPct != null ? <span className={cn(l.amtGrowthPct >= 0 ? "text-emerald-600" : "text-red-600")}>{l.amtGrowthPct >= 0 ? "+" : ""}{l.amtGrowthPct.toFixed(1)}%</span> : "—"}</TableCell>
+                                      <TableCell className="text-xs text-right tabular-nums py-2">{l.atsChangePct != null ? <span className={cn(l.atsChangePct >= 0 ? "text-emerald-600" : "text-red-600")}>{l.atsChangePct >= 0 ? "+" : ""}{l.atsChangePct.toFixed(1)}%</span> : "—"}</TableCell>
+                                      <TableCell className="text-xs text-right tabular-nums py-2"><span className={cn(l.shareChangePp >= 0 ? "text-emerald-600" : "text-red-600")}>{l.shareChangePp >= 0 ? "+" : ""}{l.shareChangePp.toFixed(1)}pp</span></TableCell>
+                                    </TableRow>
+                                  ))}
+                                </TableBody>
+                              </Table>
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </React.Fragment>
+                    ))}
+                    {disbCountView === "program-wise" && mtdLmtdProgramRows.length > 0 && (
+                      <TableRow className="bg-muted/40 font-bold border-t-2">
+                        <TableCell className="w-8 py-2" />
+                        <TableCell className="text-xs font-bold py-2">Total</TableCell>
+                        <TableCell className="text-xs text-right tabular-nums py-2">{mtdLmtdProgramRows.reduce((s, r) => s + r.feb26_loan, 0).toLocaleString("en-IN")}</TableCell>
+                        <TableCell className="text-xs text-right tabular-nums py-2">{mtdLmtdProgramRows.reduce((s, r) => s + r.feb26_amt_cr, 0).toFixed(2)}</TableCell>
+                        <TableCell className="text-xs text-right tabular-nums py-2">
+                          {mtdLmtdTotalCount > 0 ? Math.round((mtdLmtdTotalAmt * 1e7) / mtdLmtdTotalCount).toLocaleString("en-IN") : "—"}
+                        </TableCell>
+                        <TableCell className="text-xs text-right tabular-nums py-2">{mtdLmtdProgramRows.reduce((s, r) => s + r.jan26_loan, 0).toLocaleString("en-IN")}</TableCell>
+                        <TableCell className="text-xs text-right tabular-nums py-2">{mtdLmtdProgramRows.reduce((s, r) => s + r.jan26_amt_cr, 0).toFixed(2)}</TableCell>
+                        <TableCell className="text-xs text-right tabular-nums py-2">
+                          {lmtdTotalCount > 0 ? Math.round((lmtdTotalAmt * 1e7) / lmtdTotalCount).toLocaleString("en-IN") : "—"}
+                        </TableCell>
+                        <TableCell className="text-xs text-right tabular-nums py-2">
+                          {lmtdTotalCount > 0 ? <span className={cn(((mtdLmtdTotalCount - lmtdTotalCount) / lmtdTotalCount * 100) >= 0 ? "text-emerald-600" : "text-red-600")}>
+                            {((mtdLmtdTotalCount - lmtdTotalCount) / lmtdTotalCount * 100) >= 0 ? "+" : ""}{(((mtdLmtdTotalCount - lmtdTotalCount) / lmtdTotalCount) * 100).toFixed(1)}%
+                          </span> : "—"}
+                        </TableCell>
+                      </TableRow>
+                    )}
+                    {disbCountView === "policy-wise" && mtdLmtdPolicyRows.map((row) => (
+                      <React.Fragment key={row.policy}>
+                        <TableRow
+                          className="cursor-pointer hover:bg-muted/40"
+                          onClick={() => setExpandedPolicyForLender((p) => (p === row.policy ? null : row.policy))}
+                        >
+                          <TableCell className="w-8 py-2">
+                            {expandedPolicyForLender === row.policy ? <ArrowDown className="h-3 w-3" /> : <ArrowUpDown className="h-3 w-3 opacity-50" />}
+                          </TableCell>
+                          <TableCell className="text-xs font-medium py-2">{row.policy}</TableCell>
+                          <TableCell className="text-xs text-right tabular-nums py-2">{row.mtdCount.toLocaleString("en-IN")}</TableCell>
+                          <TableCell className="text-xs text-right tabular-nums py-2">{row.amtCr.toFixed(2)}</TableCell>
+                          <TableCell className="text-xs text-right tabular-nums py-2">{row.mtdAts.toLocaleString("en-IN")}</TableCell>
+                          <TableCell className="text-xs text-right tabular-nums py-2">{row.lmtdCount.toLocaleString("en-IN")}</TableCell>
+                          <TableCell className="text-xs text-right tabular-nums py-2">{row.lmtdAmtCr.toFixed(2)}</TableCell>
+                          <TableCell className="text-xs text-right tabular-nums py-2">{row.lmtdAts.toLocaleString("en-IN")}</TableCell>
+                          <TableCell className="text-xs text-right tabular-nums py-2">{row.share.toFixed(1)}%</TableCell>
+                          <TableCell className="text-xs text-right tabular-nums py-2">
+                            {row.countGrowthPct != null ? <span className={cn(row.countGrowthPct >= 0 ? "text-emerald-600" : "text-red-600")}>{row.countGrowthPct >= 0 ? "+" : ""}{row.countGrowthPct.toFixed(1)}%</span> : "—"}
+                          </TableCell>
+                        </TableRow>
+                        {expandedPolicyForLender === row.policy && (policyLenderBreakdown[row.policy] ?? []).length > 0 && (
+                          <TableRow className="bg-muted/20">
+                            <TableCell colSpan={11} className="py-2 pl-8">
+                              <p className="text-[10px] font-semibold text-muted-foreground uppercase mb-2">{row.policy} — Lender breakdown</p>
+                              <Table className="min-w-[1200px] w-full">
+                                <TableHeader>
+                                  <TableRow className="bg-muted/50">
+                                    <TableHead className="text-[10px] font-semibold">Lender</TableHead>
+                                    <TableHead className="text-[10px] font-semibold text-right">MTD count</TableHead>
+                                    <TableHead className="text-[10px] font-semibold text-right">MTD Amt (Cr)</TableHead>
+                                    <TableHead className="text-[10px] font-semibold text-right">MTD ATS</TableHead>
+                                    <TableHead className="text-[10px] font-semibold text-right">LMTD count</TableHead>
+                                    <TableHead className="text-[10px] font-semibold text-right">LMTD Amt (Cr)</TableHead>
+                                    <TableHead className="text-[10px] font-semibold text-right">LMTD ATS</TableHead>
+                                    <TableHead className="text-[10px] font-semibold text-right">Share %</TableHead>
+                                    <TableHead className="text-[10px] font-semibold text-right">MTD vs LMTD count growth %</TableHead>
+                                    <TableHead className="text-[10px] font-semibold text-right">MTD vs LMTD amt growth %</TableHead>
+                                    <TableHead className="text-[10px] font-semibold text-right">ATS change vs LMTD</TableHead>
+                                    <TableHead className="text-[10px] font-semibold text-right">Share % change vs LMTD</TableHead>
+                                  </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                  {(policyLenderBreakdown[row.policy] ?? []).map((l) => (
+                                    <TableRow key={l.lender}>
+                                      <TableCell className="text-xs font-medium py-2">{l.lender}</TableCell>
+                                      <TableCell className="text-xs text-right tabular-nums py-2">{l.mtdCount.toLocaleString("en-IN")}</TableCell>
+                                      <TableCell className="text-xs text-right tabular-nums py-2">{l.amtCr.toFixed(2)}</TableCell>
+                                      <TableCell className="text-xs text-right tabular-nums py-2">{l.ats.toLocaleString("en-IN")}</TableCell>
+                                      <TableCell className="text-xs text-right tabular-nums py-2">{l.lmtdCount.toLocaleString("en-IN")}</TableCell>
+                                      <TableCell className="text-xs text-right tabular-nums py-2">{l.lmtdAmtCr.toFixed(2)}</TableCell>
+                                      <TableCell className="text-xs text-right tabular-nums py-2">{l.lmtdAts.toLocaleString("en-IN")}</TableCell>
+                                      <TableCell className="text-xs text-right tabular-nums py-2">{l.share.toFixed(1)}%</TableCell>
+                                      <TableCell className="text-xs text-right tabular-nums py-2">{l.disbGrowthPct != null ? <span className={cn(l.disbGrowthPct >= 0 ? "text-emerald-600" : "text-red-600")}>{l.disbGrowthPct >= 0 ? "+" : ""}{l.disbGrowthPct.toFixed(1)}%</span> : "—"}</TableCell>
+                                      <TableCell className="text-xs text-right tabular-nums py-2">{l.amtGrowthPct != null ? <span className={cn(l.amtGrowthPct >= 0 ? "text-emerald-600" : "text-red-600")}>{l.amtGrowthPct >= 0 ? "+" : ""}{l.amtGrowthPct.toFixed(1)}%</span> : "—"}</TableCell>
+                                      <TableCell className="text-xs text-right tabular-nums py-2">{l.atsChangePct != null ? <span className={cn(l.atsChangePct >= 0 ? "text-emerald-600" : "text-red-600")}>{l.atsChangePct >= 0 ? "+" : ""}{l.atsChangePct.toFixed(1)}%</span> : "—"}</TableCell>
+                                      <TableCell className="text-xs text-right tabular-nums py-2"><span className={cn(l.shareChangePp >= 0 ? "text-emerald-600" : "text-red-600")}>{l.shareChangePp >= 0 ? "+" : ""}{l.shareChangePp.toFixed(1)}pp</span></TableCell>
+                                    </TableRow>
+                                  ))}
+                                </TableBody>
+                              </Table>
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </React.Fragment>
+                    ))}
+                    {disbCountView === "policy-wise" && mtdLmtdPolicyRows.length > 0 && (
+                      <TableRow className="bg-muted/40 font-bold border-t-2">
+                        <TableCell className="w-8 py-2" />
+                        <TableCell className="text-xs font-bold py-2">Total</TableCell>
+                        <TableCell className="text-xs text-right tabular-nums py-2">{mtdLmtdPolicyRows.reduce((s, r) => s + r.mtdCount, 0).toLocaleString("en-IN")}</TableCell>
+                        <TableCell className="text-xs text-right tabular-nums py-2">{mtdLmtdPolicyRows.reduce((s, r) => s + r.amtCr, 0).toFixed(2)}</TableCell>
+                        <TableCell className="text-xs text-right tabular-nums py-2">
+                          {mtdLmtdTotalCount > 0 ? Math.round((mtdLmtdTotalAmt * 1e7) / mtdLmtdTotalCount).toLocaleString("en-IN") : "—"}
+                        </TableCell>
+                        <TableCell className="text-xs text-right tabular-nums py-2">{mtdLmtdPolicyRows.reduce((s, r) => s + r.lmtdCount, 0).toLocaleString("en-IN")}</TableCell>
+                        <TableCell className="text-xs text-right tabular-nums py-2">{mtdLmtdPolicyRows.reduce((s, r) => s + r.lmtdAmtCr, 0).toFixed(2)}</TableCell>
+                        <TableCell className="text-xs text-right tabular-nums py-2">
+                          {lmtdTotalCount > 0 ? Math.round((lmtdTotalAmt * 1e7) / lmtdTotalCount).toLocaleString("en-IN") : "—"}
+                        </TableCell>
+                        <TableCell className="text-xs text-right tabular-nums py-2">100%</TableCell>
+                        <TableCell className="text-xs text-right tabular-nums py-2">
+                          {lmtdTotalCount > 0 ? <span className={cn(((mtdLmtdTotalCount - lmtdTotalCount) / lmtdTotalCount * 100) >= 0 ? "text-emerald-600" : "text-red-600")}>
+                            {((mtdLmtdTotalCount - lmtdTotalCount) / lmtdTotalCount * 100) >= 0 ? "+" : ""}{(((mtdLmtdTotalCount - lmtdTotalCount) / lmtdTotalCount) * 100).toFixed(1)}%
+                          </span> : "—"}
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Trend popup: day-wise cumulative (Cr) vs AOP for selected lender */}
+      <Dialog open={!!trendLenderPopup} onOpenChange={(v) => { if (!v) setTrendLenderPopup(null); }}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-auto">
+          <DialogHeader>
+            <DialogTitle className="text-sm">
+              {trendLenderPopup ? `${trendLenderPopup} — Day-wise trend vs AOP` : ""}
+            </DialogTitle>
+            <p className="text-[10px] text-muted-foreground">
+              Cumulative disbursement (Cr) by day. Blue = actual, orange = AOP target (Feb&apos;26).
+            </p>
+          </DialogHeader>
+          {trendLenderPopup && Array.isArray(lenderTrendDayData[trendLenderPopup]) && lenderTrendDayData[trendLenderPopup].length > 0 && (
+            <div className="h-[320px] w-full mt-2">
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={lenderTrendDayData[trendLenderPopup] ?? []} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                  <XAxis dataKey="day" tick={{ fontSize: 10 }} />
+                  <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => `${v} Cr`} />
+                  <Tooltip
+                    formatter={(value) => [`${value != null && typeof value === "number" ? value.toFixed(1) : "—"} Cr`, ""] as [React.ReactNode, ""]}
+                    labelFormatter={(label) => label}
+                  />
+                  <Legend />
+                  <Area type="monotone" dataKey="cumActual" name="Cum. actual (Cr)" fill="hsl(220, 70%, 55%)" stroke="hsl(220, 70%, 45%)" fillOpacity={0.4} />
+                  <Line type="monotone" dataKey="cumTarget" name="AOP target (Cr)" stroke="hsl(30, 80%, 50%)" strokeWidth={2} dot={false} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

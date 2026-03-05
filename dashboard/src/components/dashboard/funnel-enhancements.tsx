@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import {
   Clock, AlertTriangle,
   Keyboard, FileSpreadsheet, FileText, Printer, Link2,
-  Activity,
+  Activity, RefreshCw,
 } from "lucide-react";
 import { Sparkline, TrendBadge, generateDailyData, generateDailyConvPct } from "./sparkline";
 import { HeatmapChart, type HeatmapCell } from "./heatmap-chart";
@@ -40,6 +40,8 @@ export interface FunnelEnhancementsProps {
   compareLabel: string;
   daysElapsed?: number;
   daysInMonth?: number;
+  /** Callback to re-fetch data; when provided, a Refresh button is shown. */
+  onRefresh?: () => void | Promise<void>;
 }
 
 // ─── Daily Trend Section ─────────────────────────────────────────────────────
@@ -356,12 +358,9 @@ function ExportBar() {
 
 // ─── Data Freshness ──────────────────────────────────────────────────────────
 
-function DataFreshnessBar() {
-  const [lastRefreshed] = useState(() => {
-    const now = new Date();
-    now.setMinutes(now.getMinutes() - 12);
-    return now;
-  });
+function DataFreshnessBar({ onRefresh }: { onRefresh?: () => void | Promise<void> }) {
+  const [lastRefreshed, setLastRefreshed] = useState(() => new Date());
+  const [refreshing, setRefreshing] = useState(false);
 
   const timeAgo = useMemo(() => {
     const diffMs = Date.now() - lastRefreshed.getTime();
@@ -371,12 +370,35 @@ function DataFreshnessBar() {
     return `${Math.floor(mins / 60)}h ${mins % 60}m ago`;
   }, [lastRefreshed]);
 
+  const handleRefresh = async () => {
+    if (!onRefresh || refreshing) return;
+    setRefreshing(true);
+    try {
+      await Promise.resolve(onRefresh());
+      setLastRefreshed(new Date());
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   return (
     <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
       <div className="flex items-center gap-1">
         <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
         <span>Data refreshed {timeAgo}</span>
       </div>
+      {onRefresh && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 px-2 text-[10px] gap-1"
+          onClick={handleRefresh}
+          disabled={refreshing}
+        >
+          <RefreshCw className={cn("h-3 w-3", refreshing && "animate-spin")} />
+          {refreshing ? "Refreshing…" : "Refresh"}
+        </Button>
+      )}
     </div>
   );
 }
@@ -464,6 +486,7 @@ export function FunnelEnhancements({
   periodLabel,
   compareLabel,
   daysElapsed = 23,
+  onRefresh,
 }: FunnelEnhancementsProps) {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
@@ -494,7 +517,7 @@ export function FunnelEnhancements({
     <div className="space-y-6">
       {/* Utility bar */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border rounded-lg p-3 bg-card">
-        <DataFreshnessBar />
+        <DataFreshnessBar onRefresh={onRefresh} />
         <ExportBar />
       </div>
 

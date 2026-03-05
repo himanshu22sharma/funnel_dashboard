@@ -4,11 +4,15 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:turbo": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
     "deploy": "next build && echo 'Static files ready in out/ folder'",
-    "preview": "PREVIEW=1 npm run build && npx serve out -p 3000"
+    "preview": "npm run build:preview && node serve-no-cache.cjs",
+    "build:preview": "rm -rf .next out && BUILD_ID=$(date +%s) PREVIEW=1 npm run build",
+    "preview:serve": "node serve-no-cache.cjs",
+    "preview:clean": "npm run build:preview && node serve-no-cache.cjs"
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1",

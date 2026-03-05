@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { PageHeader } from "@/components/layout/page-header";
 import { FunnelTable } from "@/components/dashboard/funnel-table";
 import { RichInsightPanel, RichInsightItem, RichChartBar, ChartFeedbackButton } from "@/components/dashboard/rich-insight-card";
@@ -130,8 +130,9 @@ export default function FunnelSummary() {
   // Whether we're viewing a specific lender (stages start from Child_Lead_Created)
   const isLenderFiltered = effectiveLender !== "All";
 
-  useEffect(() => {
-    async function load() {
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    try {
       const [data, cf, lf, disb] = await Promise.all([
         fetchL2Analysis(),
         fetchCompleteFunnel(),
@@ -145,11 +146,14 @@ export default function FunnelSummary() {
       setAvailableLenders(getUniqueValues(data, "lender"));
       setAvailableProductTypes(getUniqueValues(data, "product_type"));
       setAvailableFlows(getUniqueValues(data, "isautoleadcreated"));
+    } finally {
       setLoading(false);
     }
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   // Scroll to section if hash is present in URL
   useEffect(() => {
@@ -995,6 +999,7 @@ export default function FunnelSummary() {
           deltaPp: s.deltaPp,
           isDataAnomaly: s.isDataAnomaly,
           lmtdLeads: s.lmtdLeads,
+          lmtdConvPct: s.lmtdConvPct ?? null,
         };
       }),
     [funnelStagesWithConv]
@@ -3472,6 +3477,7 @@ export default function FunnelSummary() {
           compareLabel={cL}
           daysElapsed={23}
           daysInMonth={28}
+          onRefresh={loadData}
         />
 
         <KpiDeepDiveModal open={kpiDive.open} onClose={() => setKpiDive({ open: false, config: null })} config={kpiDive.config} />
