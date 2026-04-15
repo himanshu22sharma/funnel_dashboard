@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import path from "path";
 
 const isProd = process.env.NODE_ENV === "production";
 const isPreview = process.env.PREVIEW === "1";
@@ -19,6 +20,8 @@ const lendingCcDestBase = (
   .replace(/\/$/, "");
 
 const nextConfig: NextConfig = {
+  /** Silence “multiple lockfiles” when a parent folder has package-lock.json (local dev / CI). */
+  turbopack: { root: path.resolve(process.cwd()) },
   ...(isVercel ? {} : (isProd || isPreview) ? { output: "export" as const } : {}),
   basePath,
   images: { unoptimized: true },

@@ -9,7 +9,9 @@
     "dev:insecure-tls": "cd dashboard && npm run dev:insecure-tls",
     "build": "cd dashboard && npm run build",
     "start": "cd dashboard && npm run start",
-    "lint": "cd dashboard && npm run lint"
+    "lint": "cd dashboard && npm run lint",
+    "vercel": "cd dashboard && vercel",
+    "vercel:prod": "cd dashboard && vercel --prod"
   },
   "keywords": [
     "lending",
