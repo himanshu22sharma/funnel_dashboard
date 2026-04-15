@@ -1,5 +1,19 @@
 import type { NextConfig } from "next";
+import fs from "fs";
 import path from "path";
+import { fileURLToPath } from "url";
+
+/** This app (`dashboard/`). */
+const dashboardRoot = path.dirname(fileURLToPath(import.meta.url));
+/** Repo root (`Lending_Dashboard_v1/`) — workspace installs hoist `next` here. */
+const monorepoRoot = path.join(dashboardRoot, "..");
+
+function turbopackRoot(): string {
+  if (fs.existsSync(path.join(monorepoRoot, "node_modules", "next"))) {
+    return monorepoRoot;
+  }
+  return dashboardRoot;
+}
 
 const isProd = process.env.NODE_ENV === "production";
 const isPreview = process.env.PREVIEW === "1";
@@ -20,8 +34,8 @@ const lendingCcDestBase = (
   .replace(/\/$/, "");
 
 const nextConfig: NextConfig = {
-  /** Silence “multiple lockfiles” when a parent folder has package-lock.json (local dev / CI). */
-  turbopack: { root: path.resolve(process.cwd()) },
+  /** Workspaces: deps at repo root. Dashboard-only CI: deps stay under `dashboard/`. */
+  turbopack: { root: turbopackRoot() },
   ...(isVercel ? {} : (isProd || isPreview) ? { output: "export" as const } : {}),
   basePath,
   images: { unoptimized: true },

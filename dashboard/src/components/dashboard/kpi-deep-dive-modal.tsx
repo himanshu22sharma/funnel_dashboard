@@ -139,8 +139,8 @@ function SectionChart({ chart }: { chart: DeepDiveChart }) {
           <YAxis tick={{ fontSize: 9 }} tickLine={false} axisLine={false} />
           <Tooltip
             contentStyle={{ fontSize: 11, borderRadius: 8 }}
-            formatter={(val: number | undefined) => [
-              `${(val ?? 0).toLocaleString("en-IN")}${chart.valueSuffix || ""}`,
+            formatter={(val) => [
+              `${Number(val ?? 0).toLocaleString("en-IN")}${chart.valueSuffix || ""}`,
               chart.label || "Value",
             ]}
           />
@@ -175,8 +175,8 @@ function SectionChart({ chart }: { chart: DeepDiveChart }) {
           </Pie>
           <Tooltip
             contentStyle={{ fontSize: 11, borderRadius: 8 }}
-            formatter={(val: number | undefined) => [
-              `${(val ?? 0).toLocaleString("en-IN")}${chart.valueSuffix || ""}`,
+            formatter={(val) => [
+              `${Number(val ?? 0).toLocaleString("en-IN")}${chart.valueSuffix || ""}`,
               chart.label || "Value",
             ]}
           />

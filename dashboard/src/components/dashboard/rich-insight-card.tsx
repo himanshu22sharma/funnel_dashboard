@@ -400,7 +400,10 @@ export function RichInsightPanel({ title, insights, pageName = "Funnel Summary",
                         <CartesianGrid strokeDasharray="3 3" stroke="hsl(0, 0%, 92%)" horizontal={false} />
                         <XAxis type="number" tick={{ fontSize: 9 }} tickLine={false} axisLine={false} />
                         <YAxis dataKey="label" type="category" tick={{ fontSize: 8 }} tickLine={false} axisLine={false} width={120} />
-                        <Tooltip contentStyle={{ fontSize: 11 }} formatter={(val: number | undefined) => val != null ? `${val}${item.expanded.chartValueSuffix}` : ""} />
+                        <Tooltip
+                          contentStyle={{ fontSize: 11 }}
+                          formatter={(val) => (val != null && val !== "" ? `${val}${item.expanded.chartValueSuffix}` : "")}
+                        />
                         <Bar
                           dataKey="value"
                           barSize={12}

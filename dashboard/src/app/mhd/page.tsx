@@ -1755,7 +1755,10 @@ export default function MHDPage() {
                             <Cell key={i} fill={COLORS[i]} />
                           ))}
                         </Pie>
-                        <Tooltip contentStyle={{ fontSize: 11 }} formatter={(val: number | undefined) => (val ?? 0).toLocaleString("en-IN")} />
+                        <Tooltip
+                          contentStyle={{ fontSize: 11 }}
+                          formatter={(val) => Number(val ?? 0).toLocaleString("en-IN")}
+                        />
                       </PieChart>
                     </ResponsiveContainer>
                   </CardContent>
@@ -1786,7 +1789,10 @@ export default function MHDPage() {
                             <Cell key={i} fill={COLORS[i]} />
                           ))}
                         </Pie>
-                        <Tooltip contentStyle={{ fontSize: 11 }} formatter={(val: number | undefined) => (val ?? 0).toLocaleString("en-IN")} />
+                        <Tooltip
+                          contentStyle={{ fontSize: 11 }}
+                          formatter={(val) => Number(val ?? 0).toLocaleString("en-IN")}
+                        />
                       </PieChart>
                     </ResponsiveContainer>
                   </CardContent>
@@ -1816,7 +1822,7 @@ export default function MHDPage() {
                       <YAxis dataKey="stage" type="category" tick={{ fontSize: 8 }} tickLine={false} axisLine={false} width={130} />
                       <Tooltip
                         contentStyle={{ fontSize: 11 }}
-                        formatter={(val: number | undefined, name: string | undefined) => [(val ?? 0).toLocaleString("en-IN"), name || ""]}
+                        formatter={(val, name) => [Number(val ?? 0).toLocaleString("en-IN"), name || ""]}
                       />
                       <Legend wrapperStyle={{ fontSize: 10 }} />
                       <Bar dataKey="Callcentre" stackId="a" fill={COLORS[0]} barSize={14} />
