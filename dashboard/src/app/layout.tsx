@@ -6,7 +6,6 @@ import { Sidebar } from "@/components/layout/sidebar";
 import { FilterProvider } from "@/lib/filter-context";
 import { RoleProvider } from "@/lib/role-context";
 import { TopBar } from "@/components/layout/top-bar";
-import { FloatingFeedback } from "@/components/layout/floating-feedback";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -43,7 +42,6 @@ export default function RootLayout({
                   <main className="flex-1 overflow-y-auto bg-muted/30">
                     {children}
                   </main>
-                  <FloatingFeedback />
                 </div>
               </div>
             </RoleProvider>

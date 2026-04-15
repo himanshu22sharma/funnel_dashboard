@@ -18,9 +18,7 @@ import {
   generateMonthlyTrends,
   MonthlyTrend,
   AOP_TARGET_CR,
-  DAYS_ELAPSED,
-  DAYS_IN_MONTH,
-  REFERENCE_DATE,
+  getMonthPacing,
 } from "@/lib/data";
 import { Banknote, TrendingUp, TrendingDown, Target, DollarSign, AlertTriangle } from "lucide-react";
 
@@ -75,9 +73,8 @@ export default function ExecutiveSummary() {
     return parseFloat(((lmtdDisbursed * AVG_ATS) / 100).toFixed(2));
   }, [hasLmsdAmt, hasAmtCr, filtered, totalAmountCr, lmtdDisbursed]);
 
-  const dayOfMonth = DAYS_ELAPSED; // as of 24-Feb-26
-  const daysInMonth = DAYS_IN_MONTH; // Feb 2026
-  const pace = dayOfMonth / daysInMonth;
+  const { dayOfMonth, daysInMonth, referenceDate } = getMonthPacing();
+  const pace = daysInMonth > 0 ? dayOfMonth / daysInMonth : 0;
   const projectedCr = pace > 0 ? parseFloat((totalAmountCr / pace).toFixed(2)) : 0;
   const totalAop = useMemo(() => {
     if (summaryOverall.length === 0) return AOP_TARGET_CR;
@@ -261,7 +258,7 @@ export default function ExecutiveSummary() {
     <div>
       <PageHeader
         title="Executive Summary"
-        description={`High-level business snapshot · ${pL} vs ${cL} · Day ${dayOfMonth}/${daysInMonth} (as of ${REFERENCE_DATE.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "2-digit" })})`}
+        description={`High-level business snapshot · ${pL} vs ${cL} · Day ${dayOfMonth}/${daysInMonth} (as of ${referenceDate.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "2-digit" })})`}
       />
 
       <div className="p-6 space-y-6">

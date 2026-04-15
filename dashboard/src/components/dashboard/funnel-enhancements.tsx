@@ -27,7 +27,10 @@ interface FunnelStageData {
 
 interface LenderStageConv {
   lender: string;
+  /** Display label aligned with ClickHouse `major_stage` for this funnel step */
   stage: string;
+  /** Funnel order for heatmap rows (destination `major_index` for this conversion step) */
+  stageIndex?: number;
   convPct: number;
   lmtdConvPct: number;
 }
@@ -508,35 +511,31 @@ export function FunnelEnhancements({
     }));
   }, [lenderStageConv]);
 
+  /** Lenders that actually appear in heatmap data (ClickHouse marketplace slice), else all funnel lenders */
+  const heatmapLenders = useMemo(() => {
+    const fromConv = [...new Set(lenderStageConv.map((c) => c.lender))].filter(Boolean).sort();
+    return fromConv.length > 0 ? fromConv : lenders;
+  }, [lenderStageConv, lenders]);
+
   const heatmapStages = useMemo(() => {
     const seen = new Set<string>();
-    return lenderStageConv.filter((c) => { if (seen.has(c.stage)) return false; seen.add(c.stage); return true; }).map((c) => c.stage);
+    const ordered = [...lenderStageConv].sort((a, b) => (a.stageIndex ?? 0) - (b.stageIndex ?? 0));
+    return ordered
+      .filter((c) => {
+        if (seen.has(c.stage)) return false;
+        seen.add(c.stage);
+        return true;
+      })
+      .map((c) => c.stage);
   }, [lenderStageConv]);
 
   return (
     <div className="space-y-6">
-      {/* Utility bar */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border rounded-lg p-3 bg-card">
-        <DataFreshnessBar onRefresh={onRefresh} />
-        <ExportBar />
-      </div>
-
-      <DataQualityFlags stages={stages} />
-
-      <DailyTrendSection
-        stages={stages}
-        daysElapsed={daysElapsed}
-        periodLabel={periodLabel}
-        compareLabel={compareLabel}
-      />
-
-      <TATAnalysis stages={stages} compareLabel={compareLabel} />
-
-      {lenders.length > 0 && heatmapCells.length > 0 && (
+      {heatmapLenders.length > 0 && heatmapCells.length > 0 && (
         <Card>
           <CardContent className="p-4">
             <HeatmapChart
-              lenders={lenders}
+              lenders={heatmapLenders}
               stages={heatmapStages}
               cells={heatmapCells}
               compareLabel={compareLabel}

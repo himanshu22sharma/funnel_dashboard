@@ -20,31 +20,51 @@ interface HeatmapChartProps {
   onCellClick?: (lender: string, stage: string) => void;
 }
 
-function getHeatBg(value: number): string {
-  if (value >= 85) return "bg-emerald-600/90 text-white";
-  if (value >= 70) return "bg-emerald-500/80 text-white";
-  if (value >= 55) return "bg-emerald-400/70 text-white";
-  if (value >= 40) return "bg-amber-400/70 text-gray-900";
-  if (value >= 25) return "bg-orange-400/80 text-white";
-  if (value >= 10) return "bg-red-400/80 text-white";
-  return "bg-red-600/90 text-white";
+/** Mid / light bands need dark foreground; saturated reds & deep greens use light text */
+function heatTone(value: number): "dark" | "light" {
+  if (value >= 85) return "light";
+  if (value >= 40 && value < 85) return "dark";
+  return "light";
 }
 
-function getDeltaColor(delta: number | null | undefined): string {
-  if (delta == null) return "";
-  if (delta >= 3) return "text-emerald-300";
-  if (delta > 0) return "text-emerald-200/80";
-  if (delta <= -3) return "text-red-200 font-bold";
-  if (delta < 0) return "text-red-200/80";
-  return "text-white/60";
+function getHeatBgOnly(value: number): string {
+  if (value >= 85) return "bg-emerald-600";
+  if (value >= 70) return "bg-emerald-500";
+  if (value >= 55) return "bg-emerald-400";
+  if (value >= 40) return "bg-amber-400";
+  if (value >= 25) return "bg-orange-500";
+  if (value >= 10) return "bg-red-500";
+  return "bg-red-600";
 }
 
-function abbreviateStage(stage: string): string {
-  return stage
-    .replace(/_/g, " ")
-    .replace(/completed?/i, "")
-    .replace(/created?/i, "")
-    .trim();
+function getMainPctClass(tone: "dark" | "light"): string {
+  return tone === "dark"
+    ? "text-zinc-950 font-extrabold [text-shadow:none]"
+    : "text-white font-extrabold [text-shadow:0_1px_2px_rgba(0,0,0,0.35)]";
+}
+
+function getDeltaClass(delta: number | null | undefined, tone: "dark" | "light"): string {
+  const base = "text-xs font-bold tabular-nums leading-tight mt-1";
+  if (delta == null) {
+    return cn(base, tone === "dark" ? "text-zinc-600" : "text-white/80");
+  }
+  if (tone === "dark") {
+    if (delta >= 3) return cn(base, "text-emerald-900");
+    if (delta > 0) return cn(base, "text-emerald-800");
+    if (delta <= -3) return cn(base, "text-red-900");
+    if (delta < 0) return cn(base, "text-red-800");
+    return cn(base, "text-zinc-700");
+  }
+  if (delta >= 3) return cn(base, "text-emerald-100");
+  if (delta > 0) return cn(base, "text-emerald-50");
+  if (delta <= -3) return cn(base, "text-red-100");
+  if (delta < 0) return cn(base, "text-red-50");
+  return cn(base, "text-white/85");
+}
+
+/** Show ClickHouse `major_stage` verbatim (only trim); no abbreviations that alter wording */
+function stageLabelAsInSource(stage: string): string {
+  return stage.trim();
 }
 
 export function HeatmapChart({
@@ -90,103 +110,106 @@ export function HeatmapChart({
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <h3 className="text-sm font-semibold">{title}</h3>
-        <div className="flex items-center gap-1.5 text-[9px] text-muted-foreground">
-          <span className="text-[8px] font-medium mr-1">Conv%:</span>
-          <span className="flex items-center gap-0.5"><span className="w-3 h-2.5 rounded-sm bg-red-600/90" /> &lt;10</span>
-          <span className="flex items-center gap-0.5"><span className="w-3 h-2.5 rounded-sm bg-red-400/80" /> 10-25</span>
-          <span className="flex items-center gap-0.5"><span className="w-3 h-2.5 rounded-sm bg-orange-400/80" /> 25-40</span>
-          <span className="flex items-center gap-0.5"><span className="w-3 h-2.5 rounded-sm bg-amber-400/70" /> 40-55</span>
-          <span className="flex items-center gap-0.5"><span className="w-3 h-2.5 rounded-sm bg-emerald-400/70" /> 55-70</span>
-          <span className="flex items-center gap-0.5"><span className="w-3 h-2.5 rounded-sm bg-emerald-500/80" /> 70-85</span>
-          <span className="flex items-center gap-0.5"><span className="w-3 h-2.5 rounded-sm bg-emerald-600/90" /> &gt;85</span>
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <h3 className="text-base font-semibold tracking-tight text-foreground">{title}</h3>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-foreground/80 font-medium">
+          <span className="mr-0.5 text-foreground">Conv%:</span>
+          <span className="flex items-center gap-1"><span className="w-3.5 h-3 rounded-sm bg-red-600 ring-1 ring-black/10" /> &lt;10</span>
+          <span className="flex items-center gap-1"><span className="w-3.5 h-3 rounded-sm bg-red-500 ring-1 ring-black/10" /> 10-25</span>
+          <span className="flex items-center gap-1"><span className="w-3.5 h-3 rounded-sm bg-orange-500 ring-1 ring-black/10" /> 25-40</span>
+          <span className="flex items-center gap-1"><span className="w-3.5 h-3 rounded-sm bg-amber-400 ring-1 ring-black/10" /> 40-55</span>
+          <span className="flex items-center gap-1"><span className="w-3.5 h-3 rounded-sm bg-emerald-400 ring-1 ring-black/10" /> 55-70</span>
+          <span className="flex items-center gap-1"><span className="w-3.5 h-3 rounded-sm bg-emerald-500 ring-1 ring-black/10" /> 70-85</span>
+          <span className="flex items-center gap-1"><span className="w-3.5 h-3 rounded-sm bg-emerald-600 ring-1 ring-black/10" /> &gt;85</span>
         </div>
       </div>
 
-      <div className="overflow-x-auto rounded-lg border">
-        <table className="w-full border-collapse min-w-[700px]">
+      <div className="overflow-x-auto rounded-lg border border-border/80 bg-card shadow-sm">
+        <table className="w-full border-collapse min-w-[820px]">
           <thead>
-            <tr>
-              <th className="sticky left-0 z-10 bg-muted/80 backdrop-blur-sm text-[10px] font-semibold text-muted-foreground text-left px-3 py-2.5 border-b border-r w-28">
-                Lender
+            <tr className="bg-muted/90">
+              <th className="sticky left-0 z-10 bg-muted/95 backdrop-blur-sm text-xs font-bold text-foreground text-left px-3 py-3 border-b border-r w-[min(15rem,32vw)] max-w-[15rem] shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)]">
+                Stage
               </th>
-              {stages.map((stage) => (
+              {lenders.map((lender) => (
                 <th
-                  key={stage}
+                  key={lender}
                   className={cn(
-                    "text-[9px] font-semibold text-muted-foreground text-center px-1 py-2 border-b min-w-[72px] transition-colors",
-                    hoveredCol === stage && "bg-primary/5"
+                    "text-[10px] font-bold text-foreground text-center px-1.5 py-3 border-b border-border/60 min-w-[80px] max-w-[100px] align-bottom transition-colors",
+                    hoveredCol === lender && "bg-primary/10"
                   )}
-                  title={stage.replace(/_/g, " ")}
+                  title={lender}
                 >
-                  <div className="leading-tight">{abbreviateStage(stage)}</div>
-                  <div className="text-[8px] font-normal text-muted-foreground/60 mt-0.5">
-                    avg {stageAvgs[stage]?.toFixed(0) ?? 0}%
-                  </div>
+                  <div className="leading-snug break-words hyphens-auto whitespace-normal">{stageLabelAsInSource(lender)}</div>
                 </th>
               ))}
-              <th className="text-[9px] font-semibold text-muted-foreground text-center px-2 py-2 border-b border-l bg-muted/40 min-w-[52px]">
+              <th className="text-xs font-bold text-foreground text-center px-2 py-3 border-b border-l bg-muted/70 min-w-[56px]">
                 Avg
               </th>
             </tr>
           </thead>
           <tbody>
-            {lenders.map((lender, lIdx) => {
-              const isRowHovered = hoveredRow === lender;
+            {stages.map((stage, sIdx) => {
+              const isRowHovered = hoveredRow === stage;
               return (
                 <tr
-                  key={lender}
-                  onMouseEnter={() => setHoveredRow(lender)}
+                  key={stage}
+                  onMouseEnter={() => setHoveredRow(stage)}
                   onMouseLeave={() => setHoveredRow(null)}
                   className={cn(
                     "transition-colors",
                     isRowHovered && "bg-muted/20",
-                    lIdx % 2 === 0 ? "bg-background" : "bg-muted/5"
+                    sIdx % 2 === 0 ? "bg-background" : "bg-muted/5"
                   )}
                 >
                   <td className={cn(
-                    "sticky left-0 z-10 text-[11px] font-semibold text-foreground px-3 py-2 border-r whitespace-nowrap",
-                    isRowHovered ? "bg-muted/60 backdrop-blur-sm" : lIdx % 2 === 0 ? "bg-background" : "bg-muted/5"
+                    "sticky left-0 z-10 text-xs font-semibold text-foreground px-3 py-2.5 border-r align-top shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]",
+                    isRowHovered ? "bg-muted/80 backdrop-blur-sm" : sIdx % 2 === 0 ? "bg-background" : "bg-muted/20"
                   )}>
-                    <div className="truncate max-w-[100px]" title={lender}>{lender}</div>
+                    <div
+                      className="whitespace-normal break-words leading-snug max-w-[min(15rem,32vw)]"
+                      title={stageLabelAsInSource(stage)}
+                    >
+                      {stageLabelAsInSource(stage)}
+                    </div>
                   </td>
-                  {stages.map((stage) => {
+                  {lenders.map((lender) => {
                     const cell = cellMap[`${lender}|${stage}`];
                     const value = cell?.value ?? 0;
                     const delta = cell?.delta;
-                    const isColHovered = hoveredCol === stage;
+                    const isColHovered = hoveredCol === lender;
                     const isCrossHover = isRowHovered && isColHovered;
+                    const tone = heatTone(value);
 
                     return (
                       <td
-                        key={stage}
-                        className="px-0.5 py-0.5 text-center"
-                        onMouseEnter={() => setHoveredCol(stage)}
+                        key={lender}
+                        className="p-1 text-center align-middle"
+                        onMouseEnter={() => setHoveredCol(lender)}
                         onMouseLeave={() => setHoveredCol(null)}
                       >
                         <div
                           className={cn(
-                            "rounded px-1.5 py-1.5 transition-all relative group",
-                            getHeatBg(value),
-                            isCrossHover && "ring-2 ring-primary ring-offset-1 scale-105 z-10 shadow-md",
-                            !isCrossHover && (isRowHovered || isColHovered) && "brightness-110",
+                            "rounded-md px-2 py-2 min-h-[52px] flex flex-col items-center justify-center transition-all relative group ring-1 ring-black/10",
+                            getHeatBgOnly(value),
+                            isCrossHover && "ring-2 ring-primary ring-offset-2 z-10 shadow-lg scale-[1.02]",
+                            !isCrossHover && (isRowHovered || isColHovered) && "brightness-[1.03] ring-black/15",
                             onCellClick && "cursor-pointer"
                           )}
                           onClick={() => onCellClick?.(lender, stage)}
                         >
-                          <div className="text-[11px] font-bold tabular-nums leading-none">
+                          <div className={cn("text-sm tabular-nums leading-none", getMainPctClass(tone))}>
                             {value.toFixed(0)}%
                           </div>
                           {delta != null && (
-                            <div className={cn("text-[8px] font-semibold tabular-nums leading-none mt-0.5", getDeltaColor(delta))}>
+                            <div className={getDeltaClass(delta, tone)}>
                               {delta > 0 ? "+" : ""}{delta.toFixed(1)}pp
                             </div>
                           )}
                           {isCrossHover && (
                             <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-popover text-popover-foreground text-[11px] px-3 py-2 rounded-lg shadow-xl border whitespace-nowrap z-30 pointer-events-none">
                               <div className="font-bold mb-0.5">{lender}</div>
-                              <div className="text-muted-foreground text-[10px] mb-1">{stage.replace(/_/g, " ")}</div>
+                              <div className="text-muted-foreground text-[10px] mb-1 max-w-[240px] whitespace-normal break-words">{stageLabelAsInSource(stage)}</div>
                               <div className="flex items-center gap-3">
                                 <span>Conv: <strong>{value.toFixed(1)}%</strong></span>
                                 {delta != null && (
@@ -201,9 +224,9 @@ export function HeatmapChart({
                       </td>
                     );
                   })}
-                  <td className="px-1 py-0.5 text-center border-l bg-muted/20">
-                    <div className="text-[10px] font-bold tabular-nums text-muted-foreground">
-                      {(lenderAvgs[lender] ?? 0).toFixed(0)}%
+                  <td className="px-2 py-1 text-center border-l bg-muted/30">
+                    <div className="text-xs font-extrabold tabular-nums text-foreground">
+                      {(stageAvgs[stage] ?? 0).toFixed(0)}%
                     </div>
                   </td>
                 </tr>
@@ -211,14 +234,14 @@ export function HeatmapChart({
             })}
           </tbody>
           <tfoot>
-            <tr className="border-t-2 bg-muted/30">
-              <td className="sticky left-0 z-10 bg-muted/60 backdrop-blur-sm text-[10px] font-bold text-muted-foreground px-3 py-2 border-r">
+            <tr className="border-t-2 border-border/80 bg-muted/50">
+              <td className="sticky left-0 z-10 bg-muted/80 backdrop-blur-sm text-xs font-extrabold text-foreground px-3 py-2.5 border-r shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]">
                 Avg
               </td>
-              {stages.map((stage) => (
-                <td key={stage} className="text-center px-0.5 py-1.5">
-                  <div className="text-[10px] font-bold tabular-nums text-muted-foreground">
-                    {(stageAvgs[stage] ?? 0).toFixed(0)}%
+              {lenders.map((lender) => (
+                <td key={lender} className="text-center px-1 py-2">
+                  <div className="text-xs font-extrabold tabular-nums text-foreground">
+                    {(lenderAvgs[lender] ?? 0).toFixed(0)}%
                   </div>
                 </td>
               ))}
@@ -228,7 +251,7 @@ export function HeatmapChart({
         </table>
       </div>
 
-      <p className="text-[9px] text-muted-foreground text-center">
+      <p className="text-xs text-foreground/75 text-center font-medium">
         Hover over cells to see details. Delta shown as pp change vs {compareLabel}.
       </p>
     </div>

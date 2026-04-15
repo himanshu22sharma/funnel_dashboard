@@ -36,11 +36,12 @@ import {
   DisbursementSummaryOverallRow,
   DisbursalBreakdownLenderRow,
   DisbursalBreakdownLeadTypeRow,
-  DAYS_ELAPSED,
-  DAYS_IN_MONTH,
-  REFERENCE_DATE,
+  getMonthPacing,
 } from "@/lib/data";
 import { cn } from "@/lib/utils";
+import { getLendingCCClientConfig } from "@/lib/lending-cc-client";
+import { loadDisbursalFtdChRows, loadDisbursalSummaryChRows } from "@/lib/ch-dashboard-mappers";
+import { getDisbursalCalendarWindows, type DisbursalSqlCalendarWindow } from "@/lib/lending-cc-sql";
 import {
   Banknote,
   Hash,
@@ -92,8 +93,6 @@ const PRODUCT_COLORS: Record<string, string> = {
   Renewal: "hsl(150, 60%, 45%)",
   MicroML: "hsl(30, 80%, 55%)",
 };
-
-const TOTAL_DAYS = DAYS_IN_MONTH; // Feb 2026 (DAYS_ELAPSED = 23 as of 24-Feb-26)
 
 // Raw MTD/LMTD data by product (lender, program, policy). Used for Disb count modal with FR split.
 interface RawMTDLMTDRow {
@@ -190,14 +189,130 @@ function expandWithFRSplit(rows: RawMTDLMTDRow[]): { lender: string; program: st
   return out;
 }
 
-// Program-type data: Loan and Disb Amt(Cr) by Feb-26 / Jan-26 (for Disb count modal) — derived from raw + FR split when using MTD/LMTD data
-const PROGRAM_TYPE_DATA: { program_type: string; feb26_loan: number; feb26_amt_cr: number; jan26_loan: number; jan26_amt_cr: number }[] = [
-  { program_type: "AD", feb26_loan: 488, feb26_amt_cr: 7.12, jan26_loan: 305, jan26_amt_cr: 3.3 },
-  { program_type: "FRESH", feb26_loan: 54902, feb26_amt_cr: 653.31, jan26_loan: 53589, jan26_amt_cr: 673.38 },
-  { program_type: "RENEWAL", feb26_loan: 19515, feb26_amt_cr: 383.09, jan26_loan: 17088, jan26_amt_cr: 381.88 },
-  { program_type: "TOP UP", feb26_loan: 30154, feb26_amt_cr: 948.82, jan26_loan: 32813, jan26_amt_cr: 1039.44 },
-  { program_type: "BT", feb26_loan: 0, feb26_amt_cr: 0, jan26_loan: 0, jan26_amt_cr: 0 },
-];
+function rowAmountCrForAgg(r: DisbursalSummaryRow): number {
+  return r.amt_cr != null && r.amt_cr > 0 ? r.amt_cr : (r.disbursed * AVG_ATS) / 100;
+}
+
+function rowLmtdAmountCrForAgg(r: DisbursalSummaryRow): number {
+  if (r.lmtd_amt_cr != null && r.lmtd_amt_cr > 0) return r.lmtd_amt_cr;
+  const ld = r.lmtd_disbursed ?? 0;
+  return ld > 0 ? (ld * AVG_ATS) / 100 : 0;
+}
+
+function programBucketForPage(pt: string): string {
+  const u = pt.trim().toUpperCase().replace(/\s+/g, " ");
+  if (u === "FRESH") return "Fresh";
+  if (u === "RENEWAL") return "Renewal";
+  if (u === "TOP UP" || u === "TOPUP") return "Topup";
+  if (u === "AD") return "AD";
+  if (u === "BT") return "BT";
+  const t = pt.trim();
+  return t ? t : "Other";
+}
+
+/** Keys aligned with expanded MTD/LMTD modal (FRESH, TOP UP, …). */
+function programDisplayKeyForModal(pt: string): string {
+  const b = programBucketForPage(pt);
+  if (b === "Topup") return "TOP UP";
+  if (b === "Fresh") return "FRESH";
+  if (b === "Renewal") return "RENEWAL";
+  return b.toUpperCase();
+}
+
+function lenderBreakdownFromDisbursalRows(
+  rows: DisbursalSummaryRow[],
+  includeRow: (r: DisbursalSummaryRow) => boolean,
+): {
+  lender: string;
+  mtdCount: number;
+  amtCr: number;
+  ats: number;
+  lmtdCount: number;
+  lmtdAmtCr: number;
+  lmtdAts: number;
+  share: number;
+  disbGrowthPct: number | null;
+  amtGrowthPct: number | null;
+  atsChangePct: number | null;
+  shareChangePp: number;
+}[] {
+  const byL: Record<string, { mtd_count: number; mtd_amt_cr: number; lmtd_count: number; lmtd_amt_cr: number }> = {};
+  rows.filter(includeRow).forEach((r) => {
+    const lender = r.lender.trim() || "—";
+    if (!byL[lender]) byL[lender] = { mtd_count: 0, mtd_amt_cr: 0, lmtd_count: 0, lmtd_amt_cr: 0 };
+    byL[lender].mtd_count += r.disbursed;
+    byL[lender].mtd_amt_cr += rowAmountCrForAgg(r);
+    byL[lender].lmtd_count += r.lmtd_disbursed ?? 0;
+    byL[lender].lmtd_amt_cr += rowLmtdAmountCrForAgg(r);
+  });
+  const scopeTotal = Object.values(byL).reduce((s, v) => s + v.mtd_count, 0);
+  const scopeLmtdTotal = Object.values(byL).reduce((s, v) => s + v.lmtd_count, 0);
+  return Object.entries(byL)
+    .map(([lender, v]) => {
+      const ats = v.mtd_count > 0 ? Math.round((v.mtd_amt_cr * 1e7) / v.mtd_count) : 0;
+      const lmtdAts = v.lmtd_count > 0 ? Math.round((v.lmtd_amt_cr * 1e7) / v.lmtd_count) : 0;
+      const share = scopeTotal > 0 ? (v.mtd_count / scopeTotal) * 100 : 0;
+      const disbGrowthPct = v.lmtd_count > 0 ? ((v.mtd_count - v.lmtd_count) / v.lmtd_count) * 100 : null;
+      const amtGrowthPct = v.lmtd_amt_cr > 0 ? ((v.mtd_amt_cr - v.lmtd_amt_cr) / v.lmtd_amt_cr) * 100 : null;
+      const atsChangePct = lmtdAts > 0 ? ((ats - lmtdAts) / lmtdAts) * 100 : null;
+      const shareLmtd = scopeLmtdTotal > 0 ? (v.lmtd_count / scopeLmtdTotal) * 100 : 0;
+      const shareChangePp = Math.round((share - shareLmtd) * 10) / 10;
+      return {
+        lender,
+        mtdCount: v.mtd_count,
+        amtCr: v.mtd_amt_cr,
+        ats,
+        lmtdCount: v.lmtd_count,
+        lmtdAmtCr: v.lmtd_amt_cr,
+        lmtdAts,
+        share,
+        disbGrowthPct,
+        amtGrowthPct,
+        atsChangePct,
+        shareChangePp,
+      };
+    })
+    .sort((a, b) => b.mtdCount - a.mtdCount);
+}
+
+function aggregateDisbursalSummaryByLender(rows: DisbursalSummaryRow[]) {
+  type Bucket = { mtdD: number; mtdA: number; lmD: number; lmA: number };
+  const byL: Record<string, Bucket> = {};
+  let totalMtdDisb = 0;
+  let totalMtdAmt = 0;
+  let totalLmtdDisb = 0;
+  let totalLmtdAmt = 0;
+  for (const r of rows) {
+    const k = r.lender.trim() || "—";
+    if (!byL[k]) byL[k] = { mtdD: 0, mtdA: 0, lmD: 0, lmA: 0 };
+    const lmD = r.lmtd_disbursed ?? 0;
+    byL[k].mtdD += r.disbursed;
+    byL[k].mtdA += rowAmountCrForAgg(r);
+    byL[k].lmD += lmD;
+    byL[k].lmA += rowLmtdAmountCrForAgg(r);
+    totalMtdDisb += r.disbursed;
+    totalMtdAmt += rowAmountCrForAgg(r);
+    totalLmtdDisb += lmD;
+    totalLmtdAmt += rowLmtdAmountCrForAgg(r);
+  }
+  const totalMtdForShare = totalMtdDisb;
+  const lenderRows = Object.entries(byL)
+    .filter(([, v]) => v.mtdD > 0 || v.lmD > 0)
+    .map(([lender, v]) => {
+      const growth = v.lmA > 0 ? ((v.mtdA - v.lmA) / v.lmA) * 100 : 0;
+      return {
+        lender,
+        mtdCount: v.mtdD,
+        amtCr: v.mtdA,
+        lmtdCount: v.lmD,
+        lmtdAmtCr: v.lmA,
+        share: totalMtdForShare > 0 ? (v.mtdD / totalMtdForShare) * 100 : 0,
+        growth,
+      };
+    })
+    .sort((a, b) => b.mtdCount - a.mtdCount);
+  return { totalMtdDisb, totalMtdAmt, totalLmtdDisb, totalLmtdAmt, lenderRows };
+}
 
 export default function DisbursalSummary() {
   const { global, useGlobalFilters } = useFilters();
@@ -221,15 +336,52 @@ export default function DisbursalSummary() {
   const [mtdLeadType, setMtdLeadType] = useState<DisbursalBreakdownLeadTypeRow[]>([]);
   const [lmsdLeadType, setLmsdLeadType] = useState<DisbursalBreakdownLeadTypeRow[]>([]);
   const [ftdLeadType, setFtdLeadType] = useState<DisbursalBreakdownLeadTypeRow[]>([]);
+  /** Set when Lending CC FTD queries fail or return partial errors (otherwise silent empty tables). */
+  const [ftdLoadError, setFtdLoadError] = useState<string | null>(null);
+  /** Same calendar window as ClickHouse disbursal queries for this load (MTD includes this day; FTD = this day). */
+  const [disbursalWindows, setDisbursalWindows] = useState<DisbursalSqlCalendarWindow>(() => getDisbursalCalendarWindows());
 
   const [disbViewTab, setDisbViewTab] = useState<"lender" | "flow">("lender");
   const [disbPeriodTab, setDisbPeriodTab] = useState<"MTD" | "LMTD" | "FTD">("MTD");
 
+  const pacing = getMonthPacing();
+  const { dayOfMonth: pacingDay, daysInMonth: pacingDaysInMonth, referenceDate: pacingAsOf } = pacing;
+
   useEffect(() => {
     async function load() {
-      const data = await fetchDisbursalSummary();
-      setRawData(data);
-      setTrends(generateMonthlyTrends(data));
+      const asOf = new Date();
+      setDisbursalWindows(getDisbursalCalendarWindows(asOf));
+      let rows: DisbursalSummaryRow[] = [];
+      const cfg = getLendingCCClientConfig();
+      if (cfg) {
+        try {
+          rows = await loadDisbursalSummaryChRows(asOf);
+        } catch {
+          rows = [];
+        }
+      }
+      if (rows.length === 0) {
+        rows = await fetchDisbursalSummary();
+      }
+      setRawData(rows);
+      setTrends(generateMonthlyTrends(rows));
+
+      // FTD from ClickHouse in the same pass as MTD disbursal (avoids racing a second effect + swallowed errors).
+      if (cfg) {
+        try {
+          const ftd = await loadDisbursalFtdChRows(asOf);
+          setFtdLender(ftd.lenders);
+          setFtdLeadType(ftd.leadTypes);
+          setFtdLoadError(ftd.errors.length > 0 ? ftd.errors.join(" · ") : null);
+        } catch (e) {
+          setFtdLender([]);
+          setFtdLeadType([]);
+          setFtdLoadError(e instanceof Error ? e.message : String(e));
+        }
+      } else {
+        setFtdLoadError(null);
+      }
+
       setLoading(false);
     }
     load();
@@ -238,22 +390,23 @@ export default function DisbursalSummary() {
   useEffect(() => {
     async function loadViews() {
       try {
-        const [overall, mtdL, lmsdL, ftdL, mtdT, lmsdT, ftdT] = await Promise.all([
+        const [overall, mtdL, lmsdL, mtdT, lmsdT] = await Promise.all([
           fetchDisbursementSummaryOverall(),
           fetchDisbursalMTDLender(),
           fetchDisbursalLMSDLender(),
-          fetchDisbursalFTDLender(),
           fetchDisbursalMTDLeadType(),
           fetchDisbursalLMSDLeadType(),
-          fetchDisbursalFTDLeadType(),
         ]);
         setSummaryOverall(overall);
         setMtdLender(mtdL);
         setLmsdLender(lmsdL);
-        setFtdLender(ftdL);
         setMtdLeadType(mtdT);
         setLmsdLeadType(lmsdT);
-        setFtdLeadType(ftdT);
+        if (!getLendingCCClientConfig()) {
+          const [ftdL, ftdT] = await Promise.all([fetchDisbursalFTDLender(), fetchDisbursalFTDLeadType()]);
+          setFtdLender(ftdL);
+          setFtdLeadType(ftdT);
+        }
       } catch {
         // CSVs may be missing in dev
       }
@@ -291,13 +444,25 @@ export default function DisbursalSummary() {
     return { ...m, ...LENDER_AOP_FALLBACK };
   }, [summaryOverall]);
 
-  // ─── Raw MTD/LMTD (spreadsheet) as primary for this page: 102,415 MTD, 101,984 LMTD ───
+  // ─── Raw MTD/LMTD (spreadsheet) fallback when no CH/CSV row data ───
   const expandedMTDLMTD = useMemo(() => expandWithFRSplit(RAW_MTD_LMTD_DATA), []);
-  const mtdLmtdTotalCount = useMemo(() => expandedMTDLMTD.reduce((s, r) => s + r.mtd_count, 0), [expandedMTDLMTD]);
-  const mtdLmtdTotalAmt = useMemo(() => expandedMTDLMTD.reduce((s, r) => s + r.mtd_amt_cr, 0), [expandedMTDLMTD]);
-  const lmtdTotalCount = useMemo(() => expandedMTDLMTD.reduce((s, r) => s + r.lmtd_count, 0), [expandedMTDLMTD]);
-  const lmtdTotalAmt = useMemo(() => expandedMTDLMTD.reduce((s, r) => s + r.lmtd_amt_cr, 0), [expandedMTDLMTD]);
-  const mtdLmtdLenderRowsForPage = useMemo(() => {
+  const spreadsheetMtdLmtdTotalCount = useMemo(
+    () => expandedMTDLMTD.reduce((s, r) => s + r.mtd_count, 0),
+    [expandedMTDLMTD],
+  );
+  const spreadsheetMtdLmtdTotalAmt = useMemo(
+    () => expandedMTDLMTD.reduce((s, r) => s + r.mtd_amt_cr, 0),
+    [expandedMTDLMTD],
+  );
+  const spreadsheetLmtdTotalCount = useMemo(
+    () => expandedMTDLMTD.reduce((s, r) => s + r.lmtd_count, 0),
+    [expandedMTDLMTD],
+  );
+  const spreadsheetLmtdTotalAmt = useMemo(
+    () => expandedMTDLMTD.reduce((s, r) => s + r.lmtd_amt_cr, 0),
+    [expandedMTDLMTD],
+  );
+  const spreadsheetMtdLmtdLenderRowsForPage = useMemo(() => {
     const byL: Record<string, { mtd_count: number; mtd_amt_cr: number; lmtd_count: number; lmtd_amt_cr: number }> = {};
     expandedMTDLMTD.forEach((r) => {
       if (!byL[r.lender]) byL[r.lender] = { mtd_count: 0, mtd_amt_cr: 0, lmtd_count: 0, lmtd_amt_cr: 0 };
@@ -306,8 +471,7 @@ export default function DisbursalSummary() {
       byL[r.lender].lmtd_count += r.lmtd_count;
       byL[r.lender].lmtd_amt_cr += r.lmtd_amt_cr;
     });
-    const total = mtdLmtdTotalCount;
-    const totalAmt = mtdLmtdTotalAmt;
+    const total = spreadsheetMtdLmtdTotalCount;
     return Object.entries(byL)
       .map(([lender, v]) => {
         const growth = v.lmtd_amt_cr > 0 ? ((v.mtd_amt_cr - v.lmtd_amt_cr) / v.lmtd_amt_cr) * 100 : 0;
@@ -322,9 +486,45 @@ export default function DisbursalSummary() {
         };
       })
       .sort((a, b) => b.mtdCount - a.mtdCount);
-  }, [expandedMTDLMTD, mtdLmtdTotalCount, mtdLmtdTotalAmt]);
+  }, [expandedMTDLMTD, spreadsheetMtdLmtdTotalCount]);
 
-  // ─── Top-level Aggregates (from raw spreadsheet data for Disbursal Summary page) ───
+  const disbRowAgg = useMemo(() => aggregateDisbursalSummaryByLender(data), [data]);
+
+  const headlineTotals = useMemo(() => {
+    if (rawData.length === 0) {
+      return {
+        totalDisbursed: spreadsheetMtdLmtdTotalCount,
+        amountCr: spreadsheetMtdLmtdTotalAmt,
+        lmtdDisbursed: spreadsheetLmtdTotalCount,
+        lmtdAmountCr: spreadsheetLmtdTotalAmt,
+      };
+    }
+    return {
+      totalDisbursed: disbRowAgg.totalMtdDisb,
+      amountCr: disbRowAgg.totalMtdAmt,
+      lmtdDisbursed: disbRowAgg.totalLmtdDisb,
+      lmtdAmountCr: disbRowAgg.totalLmtdAmt,
+    };
+  }, [
+    rawData.length,
+    disbRowAgg,
+    spreadsheetMtdLmtdTotalCount,
+    spreadsheetMtdLmtdTotalAmt,
+    spreadsheetLmtdTotalCount,
+    spreadsheetLmtdTotalAmt,
+  ]);
+
+  const mtdLmtdTotalCount = headlineTotals.totalDisbursed;
+  const mtdLmtdTotalAmt = headlineTotals.amountCr;
+  const lmtdTotalCount = headlineTotals.lmtdDisbursed;
+  const lmtdTotalAmt = headlineTotals.lmtdAmountCr;
+
+  const mtdLmtdLenderRowsForPage = useMemo(
+    () => (rawData.length > 0 ? disbRowAgg.lenderRows : spreadsheetMtdLmtdLenderRowsForPage),
+    [rawData.length, disbRowAgg, spreadsheetMtdLmtdLenderRowsForPage],
+  );
+
+  // ─── Top-level Aggregates (CH/CSV when loaded, else spreadsheet) ───
   const totalDisbursed = mtdLmtdTotalCount;
   const totalChildLeads = useMemo(() => data.reduce((s, r) => s + r.child_leads, 0), [data]);
   const amountCr = mtdLmtdTotalAmt;
@@ -332,11 +532,26 @@ export default function DisbursalSummary() {
   const lmtdAmountCr = lmtdTotalAmt;
   const disbGrowth = lmtdDisbursed > 0 ? ((totalDisbursed - lmtdDisbursed) / lmtdDisbursed) * 100 : 0;
   const amtGrowth = lmtdAmountCr > 0 ? ((amountCr - lmtdAmountCr) / lmtdAmountCr) * 100 : 0;
+  /** Avg ticket size (₹ Lakh): Cr → Lakh is ×100 per loan. */
+  const mtdAtsLakh = useMemo(() => {
+    if (totalDisbursed <= 0) return AVG_ATS;
+    if (amountCr > 0) return (amountCr * 100) / totalDisbursed;
+    return AVG_ATS;
+  }, [totalDisbursed, amountCr]);
+  const lmtdAtsLakh = useMemo(() => {
+    if (lmtdDisbursed <= 0) return 0;
+    if (lmtdAmountCr > 0) return (lmtdAmountCr * 100) / lmtdDisbursed;
+    return AVG_ATS;
+  }, [lmtdDisbursed, lmtdAmountCr]);
+  const atsDeltaVsLmtdPct = useMemo(() => {
+    if (lmtdAtsLakh <= 0) return null;
+    return ((mtdAtsLakh - lmtdAtsLakh) / lmtdAtsLakh) * 100;
+  }, [mtdAtsLakh, lmtdAtsLakh]);
   const convPct = totalChildLeads > 0 ? (totalDisbursed / totalChildLeads) * 100 : 0;
   const lmtdConv = totalChildLeads > 0 && lmtdDisbursed > 0 ? (lmtdDisbursed / Math.round(totalChildLeads * (totalDisbursed > 0 ? lmtdDisbursed / totalDisbursed : LMTD_FACTOR))) * 100 : 0;
   const convDelta = convPct - lmtdConv;
 
-  const runRateCr = (amountCr / DAYS_ELAPSED) * TOTAL_DAYS;
+  const runRateCr = pacingDay > 0 ? (amountCr / pacingDay) * pacingDaysInMonth : 0;
   const monthlyAopTarget = totalAop; // AOP = Feb'26 month target (Cr)
   const runRatePacingPct = monthlyAopTarget > 0 ? (runRateCr / monthlyAopTarget) * 100 : 0;
 
@@ -401,7 +616,9 @@ export default function DisbursalSummary() {
       }
       map[r.lender][r.product_type].disbursed += r.disbursed;
       map[r.lender][r.product_type].child += r.child_leads;
-      map[r.lender][r.product_type].amount_cr += (r.disbursed * AVG_ATS) / 100;
+      const rowAmt =
+        r.amt_cr != null && r.amt_cr > 0 ? r.amt_cr : (r.disbursed * AVG_ATS) / 100;
+      map[r.lender][r.product_type].amount_cr += rowAmt;
       productTotals[r.product_type].disbursed += r.disbursed;
       productTotals[r.product_type].child += r.child_leads;
     });
@@ -544,39 +761,31 @@ export default function DisbursalSummary() {
     });
   }, [byLender, mtdLender, lmsdLender, concentrationData.shareShifts]);
 
-  // Program-wise rows for Disb count modal: use PROGRAM_TYPE_DATA (Feb-26 / Jan-26 Loan & Disb Amt(Cr))
-  const disbCountProgramRows = PROGRAM_TYPE_DATA;
-
-  // ─── Modal tables: lender/program/policy from same raw data ───
+  // ─── Modal tables: lender/program/policy — same aggregates as page when CH/CSV rows exist ───
   const mtdLmtdLenderRows = useMemo(() => {
-    const byL: Record<string, { mtd_count: number; mtd_amt_cr: number; lmtd_count: number; lmtd_amt_cr: number }> = {};
-    expandedMTDLMTD.forEach((r) => {
-      if (!byL[r.lender]) byL[r.lender] = { mtd_count: 0, mtd_amt_cr: 0, lmtd_count: 0, lmtd_amt_cr: 0 };
-      byL[r.lender].mtd_count += r.mtd_count;
-      byL[r.lender].mtd_amt_cr += r.mtd_amt_cr;
-      byL[r.lender].lmtd_count += r.lmtd_count;
-      byL[r.lender].lmtd_amt_cr += r.lmtd_amt_cr;
-    });
-    const total = mtdLmtdTotalCount;
-    return Object.entries(byL)
-      .map(([lender, v]) => {
-        const mtdCount = v.mtd_count;
-        const lmtdCount = v.lmtd_count;
-        const ats = mtdCount > 0 ? (v.mtd_amt_cr * 1e7) / mtdCount : 0;
-        const lmtdAts = lmtdCount > 0 ? (v.lmtd_amt_cr * 1e7) / lmtdCount : 0;
+    const total = mtdLmtdLenderRowsForPage.reduce((s, r) => s + r.mtdCount, 0);
+    const lmtdTot = mtdLmtdLenderRowsForPage.reduce((s, r) => s + r.lmtdCount, 0);
+    return mtdLmtdLenderRowsForPage
+      .map((row) => {
+        const mtdCount = row.mtdCount;
+        const lmtdCount = row.lmtdCount;
+        const vMtdAmt = row.amtCr;
+        const vLmtdAmt = row.lmtdAmtCr;
+        const ats = mtdCount > 0 ? (vMtdAmt * 1e7) / mtdCount : 0;
+        const lmtdAts = lmtdCount > 0 ? (vLmtdAmt * 1e7) / lmtdCount : 0;
         const share = total > 0 ? (mtdCount / total) * 100 : 0;
         const disbGrowthPct = lmtdCount > 0 ? ((mtdCount - lmtdCount) / lmtdCount) * 100 : null;
-        const amtGrowthPct = v.lmtd_amt_cr > 0 ? ((v.mtd_amt_cr - v.lmtd_amt_cr) / v.lmtd_amt_cr) * 100 : null;
+        const amtGrowthPct = vLmtdAmt > 0 ? ((vMtdAmt - vLmtdAmt) / vLmtdAmt) * 100 : null;
         const atsChangePct = lmtdAts > 0 ? ((ats - lmtdAts) / lmtdAts) * 100 : null;
-        const myShareLmtd = lmtdTotalCount > 0 ? (lmtdCount / lmtdTotalCount) * 100 : 0;
+        const myShareLmtd = lmtdTot > 0 ? (lmtdCount / lmtdTot) * 100 : 0;
         const shareChangePp = Math.round((share - myShareLmtd) * 10) / 10;
         return {
-          lender,
+          lender: row.lender,
           mtdCount,
-          amtCr: v.mtd_amt_cr,
+          amtCr: vMtdAmt,
           ats: Math.round(ats),
           lmtdCount,
-          lmtdAmtCr: v.lmtd_amt_cr,
+          lmtdAmtCr: vLmtdAmt,
           lmtdAts: Math.round(lmtdAts),
           share,
           leadGrowthPct: null as number | null,
@@ -587,12 +796,49 @@ export default function DisbursalSummary() {
         };
       })
       .sort((a, b) => b.mtdCount - a.mtdCount);
-  }, [expandedMTDLMTD, mtdLmtdTotalCount, lmtdTotalCount]);
+  }, [mtdLmtdLenderRowsForPage]);
 
   const mtdLmtdProgramRows = useMemo(() => {
+    if (rawData.length > 0) {
+      const byP: Record<string, { mtd_count: number; mtd_amt_cr: number; lmtd_count: number; lmtd_amt_cr: number }> = {};
+      data.forEach((r) => {
+        const p = programBucketForPage(r.product_type);
+        if (!byP[p]) byP[p] = { mtd_count: 0, mtd_amt_cr: 0, lmtd_count: 0, lmtd_amt_cr: 0 };
+        byP[p].mtd_count += r.disbursed;
+        byP[p].mtd_amt_cr += rowAmountCrForAgg(r);
+        byP[p].lmtd_count += r.lmtd_disbursed ?? 0;
+        byP[p].lmtd_amt_cr += rowLmtdAmountCrForAgg(r);
+      });
+      const baseOrder = ["Fresh", "Renewal", "Topup", "AD", "BT"];
+      const extras = Object.keys(byP)
+        .filter((k) => !baseOrder.includes(k))
+        .sort((a, b) => (byP[b].mtd_count + byP[b].lmtd_count) - (byP[a].mtd_count + byP[a].lmtd_count));
+      const keys = [
+        ...baseOrder.filter((k) => byP[k] && (byP[k].mtd_count > 0 || byP[k].lmtd_count > 0)),
+        ...extras.filter((k) => byP[k] && (byP[k].mtd_count > 0 || byP[k].lmtd_count > 0)),
+      ];
+      return keys.map((program_type) => {
+        const v = byP[program_type];
+        const feb26_ats = v.mtd_count > 0 ? Math.round((v.mtd_amt_cr * 1e7) / v.mtd_count) : 0;
+        const jan26_ats = v.lmtd_count > 0 ? Math.round((v.lmtd_amt_cr * 1e7) / v.lmtd_count) : 0;
+        const countGrowthPct = v.lmtd_count > 0 ? ((v.mtd_count - v.lmtd_count) / v.lmtd_count) * 100 : null;
+        return {
+          program_type,
+          feb26_loan: v.mtd_count,
+          feb26_amt_cr: Math.round(v.mtd_amt_cr * 100) / 100,
+          feb26_ats: feb26_ats,
+          jan26_loan: v.lmtd_count,
+          jan26_amt_cr: Math.round(v.lmtd_amt_cr * 100) / 100,
+          jan26_ats: jan26_ats,
+          countGrowthPct,
+        };
+      });
+    }
     const byP: Record<string, { mtd_count: number; mtd_amt_cr: number; mtd_ats: number; lmtd_count: number; lmtd_amt_cr: number; lmtd_ats: number }> = {};
     const programOrder = ["Fresh", "Renewal", "Topup", "AD", "BT"];
-    programOrder.forEach((p) => { byP[p] = { mtd_count: 0, mtd_amt_cr: 0, mtd_ats: 0, lmtd_count: 0, lmtd_amt_cr: 0, lmtd_ats: 0 }; });
+    programOrder.forEach((p) => {
+      byP[p] = { mtd_count: 0, mtd_amt_cr: 0, mtd_ats: 0, lmtd_count: 0, lmtd_amt_cr: 0, lmtd_ats: 0 };
+    });
     expandedMTDLMTD.forEach((r) => {
       const p = r.program === "Topup" ? "Topup" : r.program;
       if (byP[p]) {
@@ -618,9 +864,35 @@ export default function DisbursalSummary() {
         countGrowthPct,
       };
     });
-  }, [expandedMTDLMTD]);
+  }, [rawData.length, data, expandedMTDLMTD]);
 
   const mtdLmtdPolicyRows = useMemo(() => {
+    if (rawData.length > 0) {
+      const order = ["GMV", "Bureau", "GST", "Banking"];
+      const total = mtdLmtdTotalCount;
+      return order.map((policy) => {
+        const isAll = policy === "GMV";
+        const mtdCount = isAll ? mtdLmtdTotalCount : 0;
+        const lmtdCount = isAll ? lmtdTotalCount : 0;
+        const mtdAmt = isAll ? mtdLmtdTotalAmt : 0;
+        const lmtdAmt = isAll ? lmtdTotalAmt : 0;
+        const share = total > 0 && isAll ? 100 : 0;
+        const mtdAts = mtdCount > 0 ? Math.round((mtdAmt * 1e7) / mtdCount) : 0;
+        const lmtdAts = lmtdCount > 0 ? Math.round((lmtdAmt * 1e7) / lmtdCount) : 0;
+        const countGrowthPct = isAll && lmtdCount > 0 ? ((mtdCount - lmtdCount) / lmtdCount) * 100 : null;
+        return {
+          policy,
+          mtdCount,
+          amtCr: mtdAmt,
+          mtdAts,
+          lmtdCount,
+          lmtdAmtCr: lmtdAmt,
+          lmtdAts,
+          share,
+          countGrowthPct,
+        };
+      });
+    }
     const byPolicy: Record<string, { mtd_count: number; mtd_amt_cr: number; lmtd_count: number; lmtd_amt_cr: number }> = {};
     expandedMTDLMTD.forEach((r) => {
       const key = (r.policy && r.policy.trim()) || "GMV";
@@ -650,11 +922,22 @@ export default function DisbursalSummary() {
         countGrowthPct,
       };
     });
-  }, [expandedMTDLMTD, mtdLmtdTotalCount]);
+  }, [rawData.length, expandedMTDLMTD, mtdLmtdTotalCount, mtdLmtdTotalAmt, lmtdTotalCount, lmtdTotalAmt]);
 
   // Per-program lender breakdown (for program-wise tab: click program → show lenders)
   const programLenderBreakdown = useMemo(() => {
     const out: Record<string, { lender: string; mtdCount: number; amtCr: number; ats: number; lmtdCount: number; lmtdAmtCr: number; lmtdAts: number; share: number; disbGrowthPct: number | null; amtGrowthPct: number | null; atsChangePct: number | null; shareChangePp: number }[]> = {};
+    if (rawData.length > 0) {
+      const baseOrder = ["Fresh", "Renewal", "Topup", "AD", "BT"];
+      const seen = new Set<string>();
+      data.forEach((r) => seen.add(programBucketForPage(r.product_type)));
+      const extras = [...seen].filter((k) => !baseOrder.includes(k)).sort();
+      const programKeys = [...baseOrder.filter((k) => seen.has(k)), ...extras];
+      programKeys.forEach((prog) => {
+        out[prog] = lenderBreakdownFromDisbursalRows(data, (r) => programBucketForPage(r.product_type) === prog);
+      });
+      return out;
+    }
     const programKeys = ["Fresh", "Renewal", "Topup", "AD", "BT"];
     programKeys.forEach((prog) => {
       const programFilter = (r: { program: string }) => (r.program === "Topup" ? "Topup" : r.program) === prog;
@@ -696,12 +979,19 @@ export default function DisbursalSummary() {
         .sort((a, b) => b.mtdCount - a.mtdCount);
     });
     return out;
-  }, [expandedMTDLMTD]);
+  }, [rawData.length, data, expandedMTDLMTD]);
 
   // Per-policy lender breakdown (for policy-wise tab: click policy → show lenders)
   const policyLenderBreakdown = useMemo(() => {
     const out: Record<string, { lender: string; mtdCount: number; amtCr: number; ats: number; lmtdCount: number; lmtdAmtCr: number; lmtdAts: number; share: number; disbGrowthPct: number | null; amtGrowthPct: number | null; atsChangePct: number | null; shareChangePp: number }[]> = {};
     const policyKeys = ["GMV", "Bureau", "GST", "Banking"];
+    if (rawData.length > 0) {
+      const portfolio = lenderBreakdownFromDisbursalRows(data, () => true);
+      policyKeys.forEach((pol) => {
+        out[pol] = pol === "GMV" ? portfolio : [];
+      });
+      return out;
+    }
     policyKeys.forEach((pol) => {
       const policyFilter = (r: { policy: string }) => ((r.policy && r.policy.trim()) || "GMV") === pol;
       const byL: Record<string, { mtd_count: number; mtd_amt_cr: number; lmtd_count: number; lmtd_amt_cr: number }> = {};
@@ -742,10 +1032,49 @@ export default function DisbursalSummary() {
         .sort((a, b) => b.mtdCount - a.mtdCount);
     });
     return out;
-  }, [expandedMTDLMTD]);
+  }, [rawData.length, data, expandedMTDLMTD]);
 
-  // Per-lender program breakdown from expanded data (for L2 drill-down in modal)
+  // Per-lender program breakdown (for L2 drill-down in modal)
   const mtdLmtdLenderProgramBreakdown = useMemo(() => {
+    if (rawData.length > 0) {
+      const byLenderProgram: Record<string, Record<string, { feb26_loan: number; feb26_amt_cr: number; jan26_loan: number; jan26_amt_cr: number }>> = {};
+      data.forEach((r) => {
+        const lender = r.lender.trim() || "—";
+        const p = programDisplayKeyForModal(r.product_type);
+        if (!byLenderProgram[lender]) byLenderProgram[lender] = {};
+        if (!byLenderProgram[lender][p]) {
+          byLenderProgram[lender][p] = { feb26_loan: 0, feb26_amt_cr: 0, jan26_loan: 0, jan26_amt_cr: 0 };
+        }
+        byLenderProgram[lender][p].feb26_loan += r.disbursed;
+        byLenderProgram[lender][p].feb26_amt_cr += rowAmountCrForAgg(r);
+        byLenderProgram[lender][p].jan26_loan += r.lmtd_disbursed ?? 0;
+        byLenderProgram[lender][p].jan26_amt_cr += rowLmtdAmountCrForAgg(r);
+      });
+      const programOrder = ["FRESH", "RENEWAL", "TOP UP", "AD", "BT"];
+      const result: Record<string, { program_type: string; feb26_loan: number; feb26_amt_cr: number; jan26_loan: number; jan26_amt_cr: number }[]> = {};
+      Object.keys(byLenderProgram).forEach((lender) => {
+        const keys = Object.keys(byLenderProgram[lender]).sort(
+          (a, b) =>
+            programOrder.indexOf(a) - programOrder.indexOf(b) ||
+            (byLenderProgram[lender][b].feb26_loan + byLenderProgram[lender][b].jan26_loan) -
+              (byLenderProgram[lender][a].feb26_loan + byLenderProgram[lender][a].jan26_loan),
+        );
+        result[lender] = keys
+          .filter(
+            (p) =>
+              byLenderProgram[lender][p] &&
+              (byLenderProgram[lender][p].feb26_loan > 0 || byLenderProgram[lender][p].jan26_loan > 0),
+          )
+          .map((p) => ({
+            program_type: p,
+            feb26_loan: byLenderProgram[lender][p].feb26_loan,
+            feb26_amt_cr: Math.round(byLenderProgram[lender][p].feb26_amt_cr * 100) / 100,
+            jan26_loan: byLenderProgram[lender][p].jan26_loan,
+            jan26_amt_cr: Math.round(byLenderProgram[lender][p].jan26_amt_cr * 100) / 100,
+          }));
+      });
+      return result;
+    }
     const byLenderProgram: Record<string, Record<string, { feb26_loan: number; feb26_amt_cr: number; jan26_loan: number; jan26_amt_cr: number }>> = {};
     expandedMTDLMTD.forEach((r) => {
       const p = r.program === "Topup" ? "TOP UP" : r.program.toUpperCase();
@@ -770,7 +1099,7 @@ export default function DisbursalSummary() {
         }));
     });
     return result;
-  }, [expandedMTDLMTD]);
+  }, [rawData.length, data, expandedMTDLMTD]);
 
   // Per-lender day-wise cumulative (Cr) for trend popup: actual vs AOP target
   const lenderTrendDayData = useMemo(() => {
@@ -778,24 +1107,25 @@ export default function DisbursalSummary() {
     mtdLmtdLenderRows.forEach((row) => {
       const aop = lenderAopMap[row.lender] ?? 0;
       const days: { day: string; cumActual: number; cumTarget: number }[] = [];
-      for (let d = 1; d <= TOTAL_DAYS; d++) {
-        const cumActual = d <= DAYS_ELAPSED ? row.amtCr * (d / DAYS_ELAPSED) : row.amtCr;
-        const cumTarget = aop * (d / TOTAL_DAYS);
+      for (let d = 1; d <= pacingDaysInMonth; d++) {
+        const cumActual = d <= pacingDay && pacingDay > 0 ? row.amtCr * (d / pacingDay) : row.amtCr;
+        const cumTarget = pacingDaysInMonth > 0 ? aop * (d / pacingDaysInMonth) : 0;
         days.push({ day: `D${d}`, cumActual: Math.round(cumActual * 100) / 100, cumTarget: Math.round(cumTarget * 100) / 100 });
       }
       out[row.lender] = days;
     });
     return out;
-  }, [mtdLmtdLenderRows, lenderAopMap]);
+  }, [mtdLmtdLenderRows, lenderAopMap, pacingDay, pacingDaysInMonth]);
 
   // ─── SECTION 4: Run-rate vs Expectation ────────────────────────────
   const runRateData = useMemo(() => {
     // Daily disbursals with expected run-rate line
-    const avgPerDay = totalDisbursed / DAYS_ELAPSED;
-    const expectedPerDay = (totalAop * 100) / (AVG_ATS * TOTAL_DAYS); // loans per day to hit Feb'26 AOP (Cr)
+    const avgPerDay = pacingDay > 0 ? totalDisbursed / pacingDay : 0;
+    const expectedPerDay =
+      pacingDaysInMonth > 0 ? (totalAop * 100) / (AVG_ATS * pacingDaysInMonth) : 0; // loans per day to hit month AOP (Cr)
 
     const days = [];
-    for (let d = 1; d <= DAYS_ELAPSED; d++) {
+    for (let d = 1; d <= pacingDay; d++) {
       const variation = 0.7 + Math.random() * 0.6;
       days.push({
         day: `D${d}`,
@@ -806,7 +1136,7 @@ export default function DisbursalSummary() {
       });
     }
     // Fill in projected days
-    for (let d = DAYS_ELAPSED + 1; d <= TOTAL_DAYS; d++) {
+    for (let d = pacingDay + 1; d <= pacingDaysInMonth; d++) {
       days.push({
         day: `D${d}`,
         actual: 0,
@@ -829,9 +1159,10 @@ export default function DisbursalSummary() {
       .filter((l) => l.aop > 0)
       .map((l) => {
         const monthlyTarget = l.aop; // AOP = Feb'26 month target (Cr)
-        const currentPace = (l.amount_cr / DAYS_ELAPSED) * TOTAL_DAYS;
+        const currentPace = pacingDay > 0 ? (l.amount_cr / pacingDay) * pacingDaysInMonth : 0;
         const pacingPct = monthlyTarget > 0 ? (currentPace / monthlyTarget) * 100 : 0;
-        const daysToTarget = l.amount_cr > 0 ? Math.ceil((monthlyTarget * DAYS_ELAPSED) / l.amount_cr) : 999;
+        const daysToTarget =
+          l.amount_cr > 0 && pacingDay > 0 ? Math.ceil((monthlyTarget * pacingDay) / l.amount_cr) : 999;
         return {
           lender: l.lender,
           mtd_cr: l.amount_cr,
@@ -847,7 +1178,7 @@ export default function DisbursalSummary() {
 
     return { days, lenderPacing, expectedPerDay, avgPerDay };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [totalDisbursed, byLender, totalAop]);
+  }, [totalDisbursed, byLender, totalAop, pacingDay, pacingDaysInMonth]);
 
   // ─── Rich Insights ─────────────────────────────────────────────────
   const richInsights = useMemo((): RichInsightItem[] => {
@@ -956,7 +1287,7 @@ export default function DisbursalSummary() {
     <div>
       <PageHeader
         title="Disbursal Summary"
-        description={`Where disbursements come from (${pL} vs ${cL}), who is performing, and whether we are on track. Day ${DAYS_ELAPSED}/${TOTAL_DAYS} (as of ${REFERENCE_DATE.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "2-digit" })}).`}
+        description={`Where disbursements come from (${pL} vs ${cL}), who is performing, and whether we are on track. Day ${pacingDay}/${pacingDaysInMonth} (as of ${pacingAsOf.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "2-digit" })}).`}
       />
 
       <div className="p-6 space-y-6">
@@ -1012,7 +1343,7 @@ export default function DisbursalSummary() {
                       title: "Analysis",
                       type: "bullets",
                       bullets: [
-                        `Total disbursed: ₹${amountCr.toFixed(1)} Cr (${totalDisbursed.toLocaleString("en-IN")} loans × ₹${AVG_ATS} L ATS)`,
+                        `Total disbursed: ₹${amountCr.toFixed(1)} Cr (${totalDisbursed.toLocaleString("en-IN")} loans × ₹${mtdAtsLakh.toFixed(2)} L ATS)`,
                         `Amount growth: ${amtGrowth > 0 ? "+" : ""}${amtGrowth.toFixed(1)}% vs ${cL}`,
                         `Monthly run-rate: ₹${runRateCr.toFixed(1)} Cr at current pace`,
                       ],
@@ -1036,14 +1367,15 @@ export default function DisbursalSummary() {
                 open: true,
                 config: {
                   title: "ATS",
-                  metric: `${AVG_ATS.toFixed(2)} L`,
+                  metric: `${mtdAtsLakh.toFixed(2)} L`,
                   subtitle: `Avg ticket size | ${totalDisbursed.toLocaleString("en-IN")} loans`,
                   sections: [
                     {
                       title: "ATS Summary",
                       type: "kpi-row",
                       kpis: [
-                        { label: "Avg ATS", value: `${AVG_ATS.toFixed(2)} L`, sub: "₹ Lakhs" },
+                        { label: `${pL} ATS`, value: `${mtdAtsLakh.toFixed(2)} L`, sub: "₹ Lakhs" },
+                        { label: `${cL} ATS`, value: lmtdDisbursed > 0 ? `${lmtdAtsLakh.toFixed(2)} L` : "—", sub: "₹ Lakhs" },
                         { label: "Total Loans", value: totalDisbursed.toLocaleString("en-IN"), sub: "disbursed" },
                         { label: "Total Amount", value: `${amountCr.toFixed(1)} Cr`, sub: "disbursed" },
                       ],
@@ -1071,9 +1403,11 @@ export default function DisbursalSummary() {
                       title: "Analysis",
                       type: "bullets",
                       bullets: [
-                        `ATS (Avg Ticket Size): ₹${AVG_ATS} Lakhs per loan`,
-                        `Total disbursed: ₹${amountCr.toFixed(1)} Cr across ${totalDisbursed.toLocaleString("en-IN")} loans`,
-                        `Amount = Loans × ATS / 100 (conversion to Cr)`,
+                        `ATS (Avg Ticket Size): ₹${mtdAtsLakh.toFixed(2)} Lakhs per loan (${amountCr.toFixed(1)} Cr ÷ ${totalDisbursed.toLocaleString("en-IN")} loans).`,
+                        lmtdDisbursed > 0
+                          ? `${cL} ATS: ₹${lmtdAtsLakh.toFixed(2)} L (${lmtdAmountCr.toFixed(1)} Cr ÷ ${lmtdDisbursed.toLocaleString("en-IN")} loans).`
+                          : `${cL} ATS not available for comparison.`,
+                        `Formula: ATS (L) = Amount (Cr) × 100 ÷ loan count.`,
                       ],
                     },
                   ],
@@ -1083,9 +1417,9 @@ export default function DisbursalSummary() {
           >
             <KPICard
               title="ATS"
-              value={`${AVG_ATS.toFixed(2)} L`}
+              value={`${mtdAtsLakh.toFixed(2)} L`}
               subtitle={`${totalDisbursed.toLocaleString("en-IN")} loans`}
-              delta={2.1}
+              delta={atsDeltaVsLmtdPct === null ? undefined : atsDeltaVsLmtdPct}
               icon={<Banknote className="h-5 w-5 text-orange-600" />}
             />
           </ClickableKpiCard>
@@ -1279,6 +1613,15 @@ export default function DisbursalSummary() {
                   {disbPeriodTab} DISBURSAL (Lender)
                 </CardTitle>
                 <p className="text-[10px] text-muted-foreground">Loan | Amt(Cr.) | ATS | Avg | Avg PF</p>
+                {disbPeriodTab === "FTD" && (
+                  <p className="text-[10px] text-muted-foreground mt-0.5">
+                    FTD = activations on <span className="font-medium text-foreground">{disbursalWindows.ftdDate}</span> (local “today”; MTD is{" "}
+                    <span className="font-medium text-foreground">
+                      {disbursalWindows.mtdStart}–{disbursalWindows.mtdEnd}
+                    </span>
+                    ).
+                  </p>
+                )}
               </CardHeader>
               <CardContent className="p-0">
                 <div className="overflow-x-auto max-h-[320px] overflow-y-auto">
@@ -1294,6 +1637,20 @@ export default function DisbursalSummary() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
+                      {disbPeriodTab === "FTD" && ftdLender.length === 0 && (
+                        <TableRow>
+                          <TableCell colSpan={6} className="text-xs text-muted-foreground py-6 text-center space-y-1">
+                            <div>
+                              No FTD lender rows for {disbursalWindows.ftdDate}. Confirm{" "}
+                              <code className="text-[10px] bg-muted px-1 rounded">NEXT_PUBLIC_LENDING_CC_*</code> is set
+                              (same API as MTD disbursal).
+                            </div>
+                            {ftdLoadError ? (
+                              <div className="text-destructive text-[10px] font-mono break-all mt-2">{ftdLoadError}</div>
+                            ) : null}
+                          </TableCell>
+                        </TableRow>
+                      )}
                       {(disbPeriodTab === "MTD" ? mtdLenderDisplay : disbPeriodTab === "LMTD" ? lmsdLenderDisplay : ftdLender ?? []).map((r) => (
                         <TableRow key={r.lender} className="hover:bg-muted/20">
                           <TableCell className="text-xs font-medium py-2">{r.lender}</TableCell>
@@ -1373,6 +1730,11 @@ export default function DisbursalSummary() {
                   {disbPeriodTab} DISBURSAL (Lead Type)
                 </CardTitle>
                 <p className="text-[10px] text-muted-foreground">Loan | Amt(Cr.) | ATS | Avg | Avg PF</p>
+                {disbPeriodTab === "FTD" && (
+                  <p className="text-[10px] text-muted-foreground mt-0.5">
+                    FTD = activations on <span className="font-medium text-foreground">{disbursalWindows.ftdDate}</span> (today, local calendar).
+                  </p>
+                )}
               </CardHeader>
               <CardContent className="p-0">
                 <div className="overflow-x-auto max-h-[320px] overflow-y-auto">
@@ -1388,6 +1750,16 @@ export default function DisbursalSummary() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
+                      {disbPeriodTab === "FTD" && ftdLeadType.length === 0 && (
+                        <TableRow>
+                          <TableCell colSpan={6} className="text-xs text-muted-foreground py-6 text-center space-y-1">
+                            <div>No FTD lead-type rows for {disbursalWindows.ftdDate}.</div>
+                            {ftdLoadError ? (
+                              <div className="text-destructive text-[10px] font-mono break-all mt-2">{ftdLoadError}</div>
+                            ) : null}
+                          </TableCell>
+                        </TableRow>
+                      )}
                       {(disbPeriodTab === "MTD" ? mtdLeadType : disbPeriodTab === "LMTD" ? lmsdLeadType : ftdLeadType ?? []).map((r) => (
                         <TableRow key={r.lead_type} className="hover:bg-muted/20">
                           <TableCell className="text-xs font-medium py-2">{r.lead_type}</TableCell>

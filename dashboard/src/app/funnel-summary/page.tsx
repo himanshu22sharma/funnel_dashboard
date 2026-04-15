@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState, useMemo, useCallback } from "react";
+import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { PageHeader } from "@/components/layout/page-header";
 import { FunnelTable } from "@/components/dashboard/funnel-table";
-import { RichInsightPanel, RichInsightItem, RichChartBar, ChartFeedbackButton } from "@/components/dashboard/rich-insight-card";
+import { RichInsightPanel, RichInsightItem, RichChartBar } from "@/components/dashboard/rich-insight-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/table";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
-import { Trophy, AlertTriangle, TrendingDown, TrendingUp, Banknote, Activity, Target, Hash, Users } from "lucide-react";
+import { Trophy, TrendingDown, TrendingUp, Banknote, Activity, Target, Hash, Users } from "lucide-react";
 import { useFilters, useDateRangeFactors } from "@/lib/filter-context";
 import {
   ResponsiveContainer,
@@ -37,17 +37,6 @@ import {
   Radar,
   Legend,
 } from "recharts";
-import {
-  fetchL2Analysis,
-  fetchCompleteFunnel,
-  fetchLenderFunnel,
-  fetchDisbursalSummary,
-  getUniqueValues,
-  L2AnalysisRow,
-  FunnelRow,
-  LenderFunnelRow,
-  DisbursalSummaryRow,
-} from "@/lib/data";
 import {
   Select,
   SelectContent,
@@ -72,12 +61,48 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
-import { GuidedTour, TourHelpButton, PulseHint, useContextualHint } from "@/components/dashboard/guided-tour";
+import { GuidedTour, PulseHint, useContextualHint } from "@/components/dashboard/guided-tour";
 import { FunnelEnhancements, type FunnelEnhancementsProps } from "@/components/dashboard/funnel-enhancements";
 import { CommandPalette } from "@/components/dashboard/command-palette";
 import { RevenueLossBar } from "@/components/dashboard/revenue-loss-bar";
-import { PatternMemory } from "@/components/dashboard/pattern-memory";
 import { useRouter } from "next/navigation";
+import { getLendingCCClientConfig } from "@/lib/lending-cc-client";
+import {
+  buildCompleteFunnelFromMarketplaceMtd,
+  deriveLenderFunnelFromL2,
+  loadFunnelSummaryCoreChData,
+  loadFunnelSummarySecondaryChData,
+} from "@/lib/ch-dashboard-mappers";
+import { buildKeyFocusStripItems, heuristicTerminalSubStage } from "@/lib/funnel-key-focus";
+import {
+  getUniqueValues,
+  canonicalMajorStageByIndex,
+  normalizeMarketplaceFlow,
+  MARKETPLACE_FLOW_AUTO,
+  MARKETPLACE_FLOW_MANUAL,
+  L2AnalysisRow,
+  FunnelRow,
+  LenderFunnelRow,
+  DisbursalSummaryRow,
+  MarketplaceFunnelRow,
+  LenderMarketplaceRow,
+} from "@/lib/data";
+
+/** No L3 failure-reason breakdown from ClickHouse yet — empty map disables mock distributions. */
+const CH_FAILURE_REASONS_EMPTY: Record<string, { reason: string; pct: number }[]> = {};
+
+const KEY_FOCUS_CAP = 8;
+
+/**
+ * `isautoleadcreated` = Flow 1 vs Flow 2 (`Flow1(Auto)` / `Flow2(Manual)` after {@link normalizeMarketplaceFlow}).
+ * Empty flow on a row still matches any selected flow tab so aggregates without flow grain stay visible.
+ */
+function l2RowMatchesFlowFilter(effectiveFlow: string, r: { isautoleadcreated: string }): boolean {
+  if (effectiveFlow === "All") return true;
+  const f = normalizeMarketplaceFlow((r.isautoleadcreated ?? "").trim());
+  if (f === "") return true;
+  return f === normalizeMarketplaceFlow(effectiveFlow.trim());
+}
 
 export default function FunnelSummary() {
   const {
@@ -92,7 +117,11 @@ export default function FunnelSummary() {
   const [completeFunnel, setCompleteFunnel] = useState<FunnelRow[]>([]);
   const [lenderFunnel, setLenderFunnel] = useState<LenderFunnelRow[]>([]);
   const [disbData, setDisbData] = useState<DisbursalSummaryRow[]>([]);
+  const [mktFunnelData, setMktFunnelData] = useState<MarketplaceFunnelRow[]>([]);
+  const [lenderMktFunnelData, setLenderMktFunnelData] = useState<LenderMarketplaceRow[]>([]);
+  const [chBootstrapError, setChBootstrapError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const bootstrapLoadId = useRef(0);
 
   // Tab-level filters
   const [tabLender, setTabLender] = useState("All");
@@ -112,10 +141,6 @@ export default function FunnelSummary() {
   const [insightDDOpen, setInsightDDOpen] = useState(false);
   const [insightDDLender, setInsightDDLender] = useState<string | null>(null);
   const [insightDDFlow, setInsightDDFlow] = useState<string | null>(null);
-  const [l2DrillStage, setL2DrillStage] = useState<string | null>(null);
-  const [l2DrillView, setL2DrillView] = useState<"reasons" | "cohorts" | null>(null);
-  const [l2ReasonDrill, setL2ReasonDrill] = useState<string | null>(null);
-
   const router = useRouter();
 
   const effectiveLender = useGlobalFilters ? global.lender : tabLender;
@@ -124,6 +149,9 @@ export default function FunnelSummary() {
     : tabProductType;
   const effectiveFlow = useGlobalFilters ? global.flow : tabFlow;
 
+  /** Stage modal reuses the same L2 payload as the page (single CH bootstrap). */
+  const drawerL2ForModal = selectedStageIndex != null ? l2Data : [];
+
   // Date range labels
   const { periodLabel: pL, compareLabel: cL, periodFactor: pF, compareFactor: cF } = useDateRangeFactors();
 
@@ -131,25 +159,66 @@ export default function FunnelSummary() {
   const isLenderFiltered = effectiveLender !== "All";
 
   const loadData = useCallback(async () => {
+    const myLoadId = ++bootstrapLoadId.current;
     setLoading(true);
-    try {
-      const [data, cf, lf, disb] = await Promise.all([
-        fetchL2Analysis(),
-        fetchCompleteFunnel(),
-        fetchLenderFunnel(),
-        fetchDisbursalSummary(),
-      ]);
-      setL2Data(data);
-      setCompleteFunnel(cf);
-      setLenderFunnel(lf);
-      setDisbData(disb);
-      setAvailableLenders(getUniqueValues(data, "lender"));
-      setAvailableProductTypes(getUniqueValues(data, "product_type"));
-      setAvailableFlows(getUniqueValues(data, "isautoleadcreated"));
-    } finally {
-      setLoading(false);
+    setChBootstrapError(null);
+    const cfg = getLendingCCClientConfig();
+    if (!cfg) {
+      setChBootstrapError(
+        "Funnel Summary loads only from ClickHouse via the Lending CC API. Set LENDING_CC_API_BASE_URL + LENDING_CC_API_TOKEN or NEXT_PUBLIC_LENDING_CC_* in .env.local, then restart `next dev` / rebuild so values are inlined (see next.config env and .env.example). There is no CSV fallback on this page."
+      );
+      setL2Data([]);
+      setCompleteFunnel([]);
+      setLenderFunnel([]);
+      setDisbData([]);
+      setMktFunnelData([]);
+      setLenderMktFunnelData([]);
+      setAvailableLenders([]);
+      setAvailableProductTypes([]);
+      setAvailableFlows([]);
+      if (myLoadId === bootstrapLoadId.current) setLoading(false);
+      return;
     }
-  }, []);
+    try {
+      const core = await loadFunnelSummaryCoreChData();
+      if (myLoadId !== bootstrapLoadId.current) return;
+      setL2Data(core.l2);
+      setMktFunnelData(core.mkt);
+      setCompleteFunnel(buildCompleteFunnelFromMarketplaceMtd(core.mkt));
+      setLenderFunnel(deriveLenderFunnelFromL2(core.l2));
+      setAvailableLenders(getUniqueValues(core.l2, "lender"));
+      setAvailableProductTypes(getUniqueValues(core.l2, "product_type"));
+      setAvailableFlows(getUniqueValues(core.l2, "isautoleadcreated"));
+      if (myLoadId === bootstrapLoadId.current) setLoading(false);
+
+      try {
+        const secondary = await loadFunnelSummarySecondaryChData();
+        if (myLoadId !== bootstrapLoadId.current) return;
+        setLenderMktFunnelData(secondary.lenderMkt);
+        setDisbData(secondary.disb);
+      } catch {
+        if (myLoadId === bootstrapLoadId.current) {
+          setLenderMktFunnelData([]);
+          setDisbData([]);
+        }
+      }
+    } catch (e) {
+      if (myLoadId === bootstrapLoadId.current) {
+        const msg = e instanceof Error ? e.message : String(e);
+        setChBootstrapError(msg || "Failed to load funnel data from ClickHouse.");
+        setL2Data([]);
+        setCompleteFunnel([]);
+        setLenderFunnel([]);
+        setDisbData([]);
+        setMktFunnelData([]);
+        setLenderMktFunnelData([]);
+        setAvailableLenders([]);
+        setAvailableProductTypes([]);
+        setAvailableFlows([]);
+        setLoading(false);
+      }
+    }
+  }, [setAvailableLenders, setAvailableProductTypes, setAvailableFlows]);
 
   useEffect(() => {
     loadData();
@@ -183,7 +252,7 @@ export default function FunnelSummary() {
       // Use lender-level funnel, starting from Child_Lead_Created (index 6)
       let rows = lenderFunnel.filter((r) => r.lender === effectiveLender);
       if (effectiveProductType !== "All") rows = rows.filter((r) => r.product_type === effectiveProductType);
-      if (effectiveFlow !== "All") rows = rows.filter((r) => r.isautoleadcreated === effectiveFlow);
+      if (effectiveFlow !== "All") rows = rows.filter((r) => l2RowMatchesFlowFilter(effectiveFlow, r));
 
       const byIdx: Record<number, { stage: string; leads: number }> = {};
       rows.forEach((r) => {
@@ -198,7 +267,7 @@ export default function FunnelSummary() {
       // Use complete funnel (all stages including Marketplace_Offer_Selected)
       let rows = completeFunnel.filter((r) => r.major_index >= 2);
       if (effectiveProductType !== "All") rows = rows.filter((r) => r.product_type === effectiveProductType);
-      if (effectiveFlow !== "All") rows = rows.filter((r) => r.isautoleadcreated === effectiveFlow);
+      if (effectiveFlow !== "All") rows = rows.filter((r) => l2RowMatchesFlowFilter(effectiveFlow, r));
 
       const byIdx: Record<number, { stage: string; leads: number }> = {};
       rows.forEach((r) => {
@@ -226,31 +295,55 @@ export default function FunnelSummary() {
     const mtdD = fLookup(15); // Disbursed
     const mtdFirst = fLookup(firstIdx); // First stage in the funnel (for overall conv)
 
-    // LMTD from L2 data (funnelStages CSVs don't have period split, use L2 for delta)
+    // LMTD from marketplace funnel if available, otherwise from L2 data
     const match = (r: L2AnalysisRow) => {
       if (effectiveLender !== "All" && r.lender !== effectiveLender) return false;
       if (effectiveProductType !== "All" && r.product_type !== effectiveProductType) return false;
-      if (effectiveFlow !== "All" && r.isautoleadcreated !== effectiveFlow) return false;
+      if (!l2RowMatchesFlowFilter(effectiveFlow, r)) return false;
       return true;
     };
-    const lmtdRows = l2Data.filter(
-      (r) => r.month_start === "2.LMTD" && !r.sub_stage &&
-        Math.floor(r.major_index) === r.major_index && r.major_index < 1000 && r.major_index !== 1 && match(r)
-    );
-    const sumLmtd = (idx: number) => lmtdRows.filter((r) => r.major_index === idx).reduce((s, r) => s + r.leads, 0);
-
-    const lmtdW = sumLmtd(2);
-    const lmtdBRE1 = sumLmtd(4);
-    const lmtdMkt = sumLmtd(5);
-    const lmtdC = sumLmtd(6);
-    const lmtdD = sumLmtd(15);
-    const lmtdFirst = isLenderFiltered ? sumLmtd(6) : sumLmtd(2);
+    
+    // Check if we're using marketplace funnel
+    const usingMarketplaceFunnel = mktFunnelData && mktFunnelData.length > 0;
+    
+    let lmtdW: number, lmtdBRE1: number, lmtdMkt: number, lmtdC: number, lmtdD: number, lmtdFirst: number;
+    
+    if (usingMarketplaceFunnel) {
+      // Use marketplace LMTD data
+      const mktLmtd = mktFunnelData
+        .filter(r => r.period === "2.LMTD")
+        .filter(r => r.major_index >= 2 && r.major_index <= 15)
+        .filter(r => r.major_index !== 6 || r.major_stage === "Child_Lead_Created");
+      
+      const sumMktLmtd = (idx: number) => mktLmtd.filter((r) => r.major_index === idx).reduce((s, r) => s + r.leads, 0);
+      
+      lmtdW = sumMktLmtd(2);
+      lmtdBRE1 = sumMktLmtd(4);
+      lmtdMkt = sumMktLmtd(5);
+      lmtdC = sumMktLmtd(6);
+      lmtdD = sumMktLmtd(15);
+      lmtdFirst = isLenderFiltered ? sumMktLmtd(6) : sumMktLmtd(2);
+    } else {
+      // Fallback to L2 data
+      const lmtdRows = l2Data.filter(
+        (r) => r.month_start === "2.LMTD" && !r.sub_stage &&
+          Math.floor(r.major_index) === r.major_index && r.major_index < 1000 && r.major_index !== 1 && match(r)
+      );
+      const sumLmtd = (idx: number) => lmtdRows.filter((r) => r.major_index === idx).reduce((s, r) => s + r.leads, 0);
+      
+      lmtdW = sumLmtd(2);
+      lmtdBRE1 = sumLmtd(4);
+      lmtdMkt = sumLmtd(5);
+      lmtdC = sumLmtd(6);
+      lmtdD = sumLmtd(15);
+      lmtdFirst = isLenderFiltered ? sumLmtd(6) : sumLmtd(2);
+    }
 
     // Flow-specific for LPV/FFR (Flow2 only) - always from L2 data
     const matchFlow2 = (r: L2AnalysisRow) => {
       if (effectiveLender !== "All" && r.lender !== effectiveLender) return false;
       if (effectiveProductType !== "All" && r.product_type !== effectiveProductType) return false;
-      return r.isautoleadcreated === "Flow2(Manual)";
+      return r.isautoleadcreated === MARKETPLACE_FLOW_MANUAL;
     };
 
     const mtdFlow2 = l2Data.filter(
@@ -266,7 +359,7 @@ export default function FunnelSummary() {
     const matchFlow1 = (r: L2AnalysisRow) => {
       if (effectiveLender !== "All" && r.lender !== effectiveLender) return false;
       if (effectiveProductType !== "All" && r.product_type !== effectiveProductType) return false;
-      return r.isautoleadcreated === "Flow1(Auto)";
+      return r.isautoleadcreated === MARKETPLACE_FLOW_AUTO;
     };
 
     const mtdF1W = l2Data.filter(
@@ -278,18 +371,6 @@ export default function FunnelSummary() {
 
     const pct = (n: number, d: number) => (d > 0 ? (n / d) * 100 : 0);
 
-    // Mock pre-funnel values
-    const mtdWhitelisted = Math.round((mtdW || mtdC) * 8.5);
-    const lmtdWhitelisted = Math.round((lmtdW || lmtdC) * 8.2);
-    const mtdImpressions = Math.round((mtdW || mtdC) * 4.2);
-    const lmtdImpressions = Math.round((lmtdW || lmtdC) * 3.9);
-    const mtdClicks = Math.round((mtdW || mtdC) * 1.8);
-    const lmtdClicks = Math.round((lmtdW || lmtdC) * 1.7);
-    const mtdLPV = Math.round(mtdF2W * 1.35);
-    const lmtdLPV = Math.round(lmtdF2W * 1.30);
-    const mtdFFR = mtdLPV > 0 ? (mtdF2W / mtdLPV) * 100 : 0;
-    const lmtdFFR = lmtdLPV > 0 ? (lmtdF2W / lmtdLPV) * 100 : 0;
-
     // Top-of-funnel and end-of-funnel conv
     const firstToLast = pct(mtdD, mtdFirst);
     const lmtdFirstToLast = pct(lmtdD, lmtdFirst);
@@ -298,11 +379,6 @@ export default function FunnelSummary() {
       mtdW, lmtdW, mtdC, lmtdC, mtdD, lmtdD,
       mtdBRE1, lmtdBRE1, mtdMkt, lmtdMkt,
       mtdF1W, lmtdF1W, mtdF2W, lmtdF2W,
-      mtdWhitelisted, lmtdWhitelisted,
-      mtdImpressions, lmtdImpressions,
-      mtdClicks, lmtdClicks,
-      mtdLPV, lmtdLPV,
-      mtdFFR, lmtdFFR,
       mtdFirst, lmtdFirst,
       // Ratios
       w2d: isLenderFiltered ? firstToLast : pct(mtdD, mtdW),
@@ -314,7 +390,7 @@ export default function FunnelSummary() {
       flowRatio: mtdF2W > 0 ? mtdF1W / mtdF2W : 0,
       lmtdFlowRatio: lmtdF2W > 0 ? lmtdF1W / lmtdF2W : 0,
     };
-  }, [l2Data, funnelStages, isLenderFiltered, effectiveLender, effectiveProductType, effectiveFlow]);
+  }, [l2Data, funnelStages, mktFunnelData, isLenderFiltered, effectiveLender, effectiveProductType, effectiveFlow]);
 
   // ─── Command Funnel: stages with conv% (vs prev), delta pp, >100% flag; top leak ─
   type FunnelStageWithConv = {
@@ -331,10 +407,55 @@ export default function FunnelSummary() {
     isDataAnomaly: boolean;
   };
   const funnelStagesWithConv = useMemo((): FunnelStageWithConv[] => {
+    // If using marketplace funnel data from completeFunnel, use it directly with LMTD comparison
+    if (completeFunnel.length > 0 && completeFunnel[0].leads !== undefined) {
+      const result: FunnelStageWithConv[] = [];
+      
+      // Get LMTD marketplace data if available
+      const mktLmtd = mktFunnelData && mktFunnelData.length > 0
+        ? mktFunnelData
+            .filter(r => r.period === "2.LMTD")
+            .filter(r => r.major_index >= 2 && r.major_index <= 15)
+            .filter(r => r.major_index !== 6 || r.major_stage === "Child_Lead_Created")
+        : [];
+      
+      for (let i = 0; i < completeFunnel.length; i++) {
+        const cur = completeFunnel[i];
+        const prev = i > 0 ? completeFunnel[i - 1] : null;
+        const leads = cur.leads;
+        const prevLeads = prev ? prev.leads : 0;
+        const convPct = prevLeads > 0 ? parseFloat(((leads / prevLeads) * 100).toFixed(2)) : (i === 0 ? 100 : null);
+        
+        // Get LMTD data for this stage
+        const lmtdStage = mktLmtd.find(r => r.major_index === cur.major_index);
+        const lmtdLeads = lmtdStage ? lmtdStage.leads : 0;
+        const lmtdPrevStage = mktLmtd.find(r => r.major_index === (prev?.major_index ?? -1));
+        const lmtdPrevLeads = lmtdPrevStage ? lmtdPrevStage.leads : 0;
+        const lmtdConvPct = lmtdPrevLeads > 0 ? parseFloat(((lmtdLeads / lmtdPrevLeads) * 100).toFixed(2)) : (i === 0 ? 100 : null);
+        const deltaPp = (convPct !== null && lmtdConvPct !== null) ? parseFloat((convPct - lmtdConvPct).toFixed(2)) : null;
+        
+        result.push({
+          index: cur.major_index,
+          name: cur.major_stage,
+          leads,
+          prevLeads,
+          prevStageName: prev?.major_stage ?? "",
+          convPct: convPct ?? null,
+          lmtdLeads,
+          lmtdPrevLeads,
+          lmtdConvPct: lmtdConvPct ?? null,
+          deltaPp,
+          isDataAnomaly: false,
+        });
+      }
+      return result;
+    }
+    
+    // Otherwise compute from L2 data (original logic)
     const match = (r: L2AnalysisRow) => {
       if (effectiveLender !== "All" && r.lender !== effectiveLender) return false;
       if (effectiveProductType !== "All" && r.product_type !== effectiveProductType) return false;
-      if (effectiveFlow !== "All" && r.isautoleadcreated !== effectiveFlow) return false;
+      if (!l2RowMatchesFlowFilter(effectiveFlow, r)) return false;
       return true;
     };
     const mtdRows = l2Data.filter(
@@ -379,7 +500,7 @@ export default function FunnelSummary() {
       });
     }
     return result;
-  }, [funnelStages, l2Data, effectiveLender, effectiveProductType, effectiveFlow]);
+  }, [funnelStages, completeFunnel, l2Data, mktFunnelData, effectiveLender, effectiveProductType, effectiveFlow]);
 
   const topLeakStageIndex = useMemo((): number | null => {
     let bestImpact = 0;
@@ -395,169 +516,6 @@ export default function FunnelSummary() {
     });
     return bestIndex;
   }, [funnelStagesWithConv]);
-
-  // ─── Mock L3 failure reasons (mirrored from funnel-table — will be shared later) ──
-  const MOCK_FAILURE_REASONS: Record<string, { reason: string; pct: number }[]> = useMemo(() => ({
-    BRE2_FAILURE: [
-      { reason: "Income below threshold", pct: 32.5 },
-      { reason: "Bureau score < 650", pct: 24.1 },
-      { reason: "High existing EMI burden", pct: 18.7 },
-      { reason: "Business vintage < 12 months", pct: 12.3 },
-      { reason: "Other policy rejection", pct: 12.4 },
-    ],
-    KYC_FAILED: [
-      { reason: "Name mismatch (PAN vs Aadhaar)", pct: 28.4 },
-      { reason: "Photo mismatch / low quality", pct: 22.1 },
-      { reason: "Aadhaar OTP timeout", pct: 19.6 },
-    ],
-    LENDER_BRE_REJECTED: [
-      { reason: "Pincode not serviceable", pct: 35.2 },
-      { reason: "Category excluded", pct: 22.8 },
-      { reason: "Bureau model score low", pct: 20.3 },
-    ],
-    SERVICEABILITY_REJECTED: [
-      { reason: "Pincode not serviceable by lender", pct: 52.3 },
-      { reason: "Merchant category not eligible", pct: 28.7 },
-    ],
-    KYC_REJECTED: [
-      { reason: "Video KYC failed — face mismatch", pct: 31.2 },
-      { reason: "CKYC record not found", pct: 26.8 },
-    ],
-    EMANDATE_REQUIRED: [
-      { reason: "User did not complete e-mandate", pct: 45.6 },
-      { reason: "Bank not supported for e-mandate", pct: 28.3 },
-    ],
-    LOAN_DISBURSEMENT_FAILURE: [
-      { reason: "Bank account validation failed", pct: 34.1 },
-      { reason: "NEFT/IMPS transfer failed", pct: 28.7 },
-    ],
-    LOAN_APPLICATION_ON_HOLD: [
-      { reason: "Pending FI (Field Investigation)", pct: 38.4 },
-      { reason: "Pending additional document", pct: 27.6 },
-    ],
-    LOAN_QC_REJECTED: [
-      { reason: "Document quality check failed", pct: 42.1 },
-      { reason: "Income proof insufficient", pct: 28.5 },
-    ],
-    BANK_NAME_MATCH_FAILED: [
-      { reason: "Account holder name != applicant name", pct: 55.2 },
-      { reason: "Joint account detected", pct: 24.8 },
-    ],
-    LENDER_CREATE_APPLICATION_REJECTED: [
-      { reason: "Duplicate lead at lender", pct: 38.5 },
-      { reason: "KYC data mismatch with lender records", pct: 25.2 },
-    ],
-  }), []);
-
-  type L2CohortRow = { segment: string; mtd: number; lmtd: number; diffPct: number | null };
-  type L2CohortDimension = { dimension: string; rows: L2CohortRow[] };
-  type L2ReasonRow = { reason: string; mtd: number; lmtd: number; diffPct: number | null; cohorts: L2CohortDimension[] };
-  type L2DeepDiveData = { reasons: L2ReasonRow[]; cohorts: L2CohortDimension[] };
-
-  const MOCK_L2_DEEP_DIVE: Record<string, L2DeepDiveData> = useMemo(() => {
-    const d = (m: number, l: number) => l > 0 ? parseFloat((((m - l) / l) * 100).toFixed(1)) : null;
-    const STD_COHORTS: L2CohortDimension[] = [
-      { dimension: "Vintage", rows: [
-        { segment: "0-6M", mtd: 35, lmtd: 48, diffPct: d(35, 48) },
-        { segment: "6-12M", mtd: 22, lmtd: 28, diffPct: d(22, 28) },
-        { segment: "12-18M", mtd: 12, lmtd: 18, diffPct: d(12, 18) },
-        { segment: "18-24M", mtd: 10, lmtd: 14, diffPct: d(10, 14) },
-        { segment: "24M+", mtd: 8, lmtd: 13, diffPct: d(8, 13) },
-      ]},
-      { dimension: "MCRS Decile", rows: [
-        { segment: "1", mtd: 30, lmtd: 40, diffPct: d(30, 40) },
-        { segment: "2", mtd: 20, lmtd: 28, diffPct: d(20, 28) },
-        { segment: "3", mtd: 15, lmtd: 22, diffPct: d(15, 22) },
-        { segment: "4", mtd: 12, lmtd: 18, diffPct: d(12, 18) },
-        { segment: "4+", mtd: 10, lmtd: 13, diffPct: d(10, 13) },
-      ]},
-      { dimension: "NoWL", rows: [
-        { segment: "0", mtd: 32, lmtd: 42, diffPct: d(32, 42) },
-        { segment: "1", mtd: 22, lmtd: 30, diffPct: d(22, 30) },
-        { segment: "2", mtd: 15, lmtd: 20, diffPct: d(15, 20) },
-        { segment: "3", mtd: 10, lmtd: 15, diffPct: d(10, 15) },
-        { segment: "3+", mtd: 8, lmtd: 14, diffPct: d(8, 14) },
-      ]},
-      { dimension: "Category", rows: [
-        { segment: "Retail & Shopping", mtd: 28, lmtd: 38, diffPct: d(28, 38) },
-        { segment: "Restaurant", mtd: 18, lmtd: 25, diffPct: d(18, 25) },
-        { segment: "Automobiles", mtd: 15, lmtd: 20, diffPct: d(15, 20) },
-        { segment: "Meat Shop", mtd: 14, lmtd: 22, diffPct: d(14, 22) },
-        { segment: "Street Hawker", mtd: 12, lmtd: 16, diffPct: d(12, 16) },
-      ]},
-      { dimension: "Location", rows: [
-        { segment: "Top 8", mtd: 30, lmtd: 42, diffPct: d(30, 42) },
-        { segment: "9-20", mtd: 22, lmtd: 30, diffPct: d(22, 30) },
-        { segment: "21-60", mtd: 20, lmtd: 28, diffPct: d(20, 28) },
-        { segment: "Beyond 60", mtd: 15, lmtd: 21, diffPct: d(15, 21) },
-      ]},
-    ];
-
-    const mkReasonCohorts = (scale: number): L2CohortDimension[] => STD_COHORTS.map((dim) => ({
-      dimension: dim.dimension,
-      rows: dim.rows.map((r) => {
-        const m = Math.round(r.mtd * scale * (0.8 + Math.random() * 0.4));
-        const l = Math.round(r.lmtd * scale * (0.8 + Math.random() * 0.4));
-        return { segment: r.segment, mtd: m, lmtd: l, diffPct: d(m, l) };
-      }),
-    }));
-
-    return {
-      BRE2_FAILURE: {
-        reasons: [
-          { reason: "Income below threshold", mtd: 28, lmtd: 42, diffPct: d(28, 42), cohorts: mkReasonCohorts(0.32) },
-          { reason: "Bureau score < 650", mtd: 22, lmtd: 30, diffPct: d(22, 30), cohorts: mkReasonCohorts(0.25) },
-          { reason: "High existing EMI burden", mtd: 18, lmtd: 24, diffPct: d(18, 24), cohorts: mkReasonCohorts(0.2) },
-          { reason: "Business vintage < 12 months", mtd: 11, lmtd: 15, diffPct: d(11, 15), cohorts: mkReasonCohorts(0.13) },
-          { reason: "Other policy rejection", mtd: 8, lmtd: 10, diffPct: d(8, 10), cohorts: mkReasonCohorts(0.09) },
-        ],
-        cohorts: STD_COHORTS,
-      },
-      KYC_FAILED: {
-        reasons: [
-          { reason: "Name mismatch (PAN vs Aadhaar)", mtd: 15, lmtd: 20, diffPct: d(15, 20), cohorts: mkReasonCohorts(0.33) },
-          { reason: "Photo mismatch / low quality", mtd: 12, lmtd: 16, diffPct: d(12, 16), cohorts: mkReasonCohorts(0.27) },
-          { reason: "Aadhaar OTP timeout", mtd: 10, lmtd: 14, diffPct: d(10, 14), cohorts: mkReasonCohorts(0.22) },
-          { reason: "Document upload failed", mtd: 8, lmtd: 9, diffPct: d(8, 9), cohorts: mkReasonCohorts(0.18) },
-        ],
-        cohorts: STD_COHORTS.map((dim) => ({ dimension: dim.dimension, rows: dim.rows.map((r) => ({ ...r, mtd: Math.round(r.mtd * 0.6), lmtd: Math.round(r.lmtd * 0.7), diffPct: d(Math.round(r.mtd * 0.6), Math.round(r.lmtd * 0.7)) })) })),
-      },
-      INITIATE_MULTIMODE_KYC: {
-        reasons: [
-          { reason: "User dropped off before KYC start", mtd: 45, lmtd: 38, diffPct: d(45, 38), cohorts: mkReasonCohorts(0.48) },
-          { reason: "Camera permission denied", mtd: 20, lmtd: 22, diffPct: d(20, 22), cohorts: mkReasonCohorts(0.22) },
-          { reason: "Session timeout", mtd: 18, lmtd: 15, diffPct: d(18, 15), cohorts: mkReasonCohorts(0.19) },
-          { reason: "Technical error on KYC SDK", mtd: 10, lmtd: 12, diffPct: d(10, 12), cohorts: mkReasonCohorts(0.11) },
-        ],
-        cohorts: STD_COHORTS.map((dim) => ({ dimension: dim.dimension, rows: dim.rows.map((r) => ({ ...r, mtd: Math.round(r.mtd * 1.1), lmtd: Math.round(r.lmtd * 0.9), diffPct: d(Math.round(r.mtd * 1.1), Math.round(r.lmtd * 0.9)) })) })),
-      },
-      KYC_SELFIE_REUPLOAD_REQUIRED: {
-        reasons: [
-          { reason: "Selfie blurry / low resolution", mtd: 30, lmtd: 25, diffPct: d(30, 25), cohorts: mkReasonCohorts(0.5) },
-          { reason: "Face not matching ID photo", mtd: 22, lmtd: 20, diffPct: d(22, 20), cohorts: mkReasonCohorts(0.37) },
-          { reason: "Multiple faces detected", mtd: 8, lmtd: 6, diffPct: d(8, 6), cohorts: mkReasonCohorts(0.13) },
-        ],
-        cohorts: STD_COHORTS.map((dim) => ({ dimension: dim.dimension, rows: dim.rows.map((r) => ({ ...r, mtd: Math.round(r.mtd * 0.8), lmtd: Math.round(r.lmtd * 0.65), diffPct: d(Math.round(r.mtd * 0.8), Math.round(r.lmtd * 0.65)) })) })),
-      },
-      LENDER_BRE_REJECTED: {
-        reasons: [
-          { reason: "Pincode not serviceable", mtd: 20, lmtd: 28, diffPct: d(20, 28), cohorts: mkReasonCohorts(0.37) },
-          { reason: "Category excluded", mtd: 14, lmtd: 18, diffPct: d(14, 18), cohorts: mkReasonCohorts(0.26) },
-          { reason: "Bureau model score low", mtd: 12, lmtd: 16, diffPct: d(12, 16), cohorts: mkReasonCohorts(0.22) },
-          { reason: "Income criteria not met", mtd: 8, lmtd: 10, diffPct: d(8, 10), cohorts: mkReasonCohorts(0.15) },
-        ],
-        cohorts: STD_COHORTS.map((dim) => ({ dimension: dim.dimension, rows: dim.rows.map((r) => ({ ...r, mtd: Math.round(r.mtd * 0.7), lmtd: Math.round(r.lmtd * 0.85), diffPct: d(Math.round(r.mtd * 0.7), Math.round(r.lmtd * 0.85)) })) })),
-      },
-      EMANDATE_REQUIRED: {
-        reasons: [
-          { reason: "User did not complete e-mandate", mtd: 25, lmtd: 30, diffPct: d(25, 30), cohorts: mkReasonCohorts(0.5) },
-          { reason: "Bank not supported for e-mandate", mtd: 15, lmtd: 18, diffPct: d(15, 18), cohorts: mkReasonCohorts(0.3) },
-          { reason: "Mandate registration failed", mtd: 10, lmtd: 12, diffPct: d(10, 12), cohorts: mkReasonCohorts(0.2) },
-        ],
-        cohorts: STD_COHORTS.map((dim) => ({ dimension: dim.dimension, rows: dim.rows.map((r) => ({ ...r, mtd: Math.round(r.mtd * 0.65), lmtd: Math.round(r.lmtd * 0.75), diffPct: d(Math.round(r.mtd * 0.65), Math.round(r.lmtd * 0.75)) })) })),
-      },
-    };
-  }, []);
 
   // ─── Deep funnel insights (rich format like Insights tab) ──────────────
   const funnelInsights = useMemo((): RichInsightItem[] => {
@@ -651,7 +609,7 @@ export default function FunnelSummary() {
     const match = (r: L2AnalysisRow) => {
       if (effectiveLender !== "All" && r.lender !== effectiveLender) return false;
       if (effectiveProductType !== "All" && r.product_type !== effectiveProductType) return false;
-      if (effectiveFlow !== "All" && r.isautoleadcreated !== effectiveFlow) return false;
+      if (!l2RowMatchesFlowFilter(effectiveFlow, r)) return false;
       return true;
     };
 
@@ -679,7 +637,7 @@ export default function FunnelSummary() {
       const lenders = new Set(l2Data.filter((r) => r.month_start === "1.MTD" && !r.sub_stage && match(r)).map((r) => r.lender));
       const breakdown: { lender: string; delta: number }[] = [];
       lenders.forEach((lndr) => {
-        const lMatch = (r: L2AnalysisRow) => r.lender === lndr && (effectiveProductType === "All" || r.product_type === effectiveProductType) && (effectiveFlow === "All" || r.isautoleadcreated === effectiveFlow);
+        const lMatch = (r: L2AnalysisRow) => r.lender === lndr && (effectiveProductType === "All" || r.product_type === effectiveProductType) && l2RowMatchesFlowFilter(effectiveFlow, r);
         const mPrev = l2Data.filter((r) => r.month_start === "1.MTD" && !r.sub_stage && r.major_index === prevIdx && lMatch(r)).reduce((s, r) => s + r.leads, 0);
         const mCur = l2Data.filter((r) => r.month_start === "1.MTD" && !r.sub_stage && r.major_index === curIdx && lMatch(r)).reduce((s, r) => s + r.leads, 0);
         const lPrev = l2Data.filter((r) => r.month_start === "2.LMTD" && !r.sub_stage && r.major_index === prevIdx && lMatch(r)).reduce((s, r) => s + r.leads, 0);
@@ -750,10 +708,6 @@ export default function FunnelSummary() {
 
         topStuck.slice(0, 3).forEach((s) => {
           hypotheses.push(`Sub-stage "${s.sub_stage}" stuck rate increased +${s.delta_pp.toFixed(1)}pp (${s.mtd_leads.toLocaleString("en-IN")} leads stuck).`);
-          const l3 = MOCK_FAILURE_REASONS[s.sub_stage];
-          if (l3 && l3.length > 0) {
-            hypotheses.push(`Top reason at ${s.sub_stage}: "${l3[0].reason}" (${l3[0].pct}%).`);
-          }
           bullets.push(`${s.sub_stage}: +${s.delta_pp.toFixed(1)}pp stuck rate increase`);
         });
 
@@ -846,35 +800,8 @@ export default function FunnelSummary() {
       }
     }
 
-    // --- FFR & FLOW INSIGHTS ---
-    const ffrDelta = stats.mtdFFR - stats.lmtdFFR;
-    if (Math.abs(ffrDelta) > 2) {
-      const isGood = ffrDelta > 0;
-      insights.push({
-        id: nextId(),
-        icon: isGood ? TrendingUp : AlertTriangle,
-        color: isGood ? "text-emerald-600" : "text-amber-600",
-        title: `Flow2 FFR ${isGood ? "Improved" : "Dropped"} ${Math.abs(ffrDelta).toFixed(1)}pp`,
-        detail: `Form Fill Rate: ${stats.mtdFFR.toFixed(1)}% vs ${stats.lmtdFFR.toFixed(1)}% ${cL}.${!isGood ? " Check landing page UX." : ""}`,
-        severity: isGood ? "good" : "warn",
-        impactWeight: 45,
-        link: "/funnel-summary",
-        expanded: {
-          bullets: [
-            `${pL} FFR: ${stats.mtdFFR.toFixed(1)}% | ${cL} FFR: ${stats.lmtdFFR.toFixed(1)}%`,
-            `Change: ${ffrDelta > 0 ? "+" : ""}${ffrDelta.toFixed(1)}pp`,
-            `LPV (${pL}): ${stats.mtdLPV.toLocaleString("en-IN")} | Flow2 leads: ${stats.mtdF2W.toLocaleString("en-IN")}`,
-            !isGood ? "Possible causes: landing page changes, load time increase, or form complexity." : "Improved UX or faster page load contributing to higher fill rates.",
-          ],
-          chartData: [],
-          chartLabel: "",
-          chartValueSuffix: "pp",
-        },
-      });
-    }
-
     return insights;
-  }, [stats, l2Data, effectiveLender, effectiveProductType, effectiveFlow, MOCK_FAILURE_REASONS, cL, pL]);
+  }, [stats, l2Data, effectiveLender, effectiveProductType, effectiveFlow, cL, pL]);
 
   // ─── Cross-lender conv% comparison table data ──────────────────────
   const crossLenderData = useMemo(() => {
@@ -887,7 +814,7 @@ export default function FunnelSummary() {
         r.major_index < 1000 &&
         r.major_index !== 1 &&
         (effectiveProductType === "All" || r.product_type === effectiveProductType) &&
-        (effectiveFlow === "All" || r.isautoleadcreated === effectiveFlow)
+        l2RowMatchesFlowFilter(effectiveFlow, r)
     );
 
     // All unique lenders
@@ -1029,30 +956,105 @@ export default function FunnelSummary() {
 
   const lenderStageConvData = useMemo(() => {
     if (isLenderFiltered) return [];
-    const lenderRows = lenderFunnel.filter((r) => {
-      if (effectiveProductType !== "All" && r.product_type !== effectiveProductType) return false;
-      if (effectiveFlow !== "All" && r.isautoleadcreated !== effectiveFlow) return false;
-      return true;
-    });
-    const lmtdByLenderStage: Record<string, { leads: number; prevLeads: number }> = {};
+    
+    // Use lender-level marketplace funnel data for heatmap (stages 6-15)
+    if (lenderMktFunnelData.length > 0) {
+      // Filter for MTD period
+      const mtdData = lenderMktFunnelData.filter(r => r.period === "1.MTD");
+      
+      if (mtdData.length === 0) return [];
+
+      const labelRows = lenderMktFunnelData
+        .filter((r) => effectiveProductType === "All" || r.product_type === effectiveProductType)
+        .map((r) => ({ major_index: r.major_index, major_stage: r.major_stage, leads: r.leads }));
+      const labelByIndex = canonicalMajorStageByIndex(labelRows);
+      
+      // Get LMTD data for comparison
+      const lmtdByLenderStage: Record<string, number> = {};
+      lenderMktFunnelData.filter(r => r.period === "2.LMTD")
+        .forEach(r => {
+          if (effectiveProductType !== "All" && r.product_type !== effectiveProductType) return;
+          const key = `${r.lender}|${r.major_index}`;
+          lmtdByLenderStage[key] = (lmtdByLenderStage[key] || 0) + r.leads;
+        });
+
+      // Aggregate by lender × index for MTD
+      const byLenderIdx: Record<string, number> = {};
+      mtdData.forEach(r => {
+        if (effectiveProductType !== "All" && r.product_type !== effectiveProductType) return;
+        const key = `${r.lender}|${r.major_index}`;
+        byLenderIdx[key] = (byLenderIdx[key] || 0) + r.leads;
+      });
+
+      const stageIndices = [...new Set(mtdData.map(r => r.major_index))].sort((a, b) => a - b);
+      const lenderNames = [...new Set(mtdData.filter(r => {
+        if (effectiveProductType !== "All" && r.product_type !== effectiveProductType) return false;
+        return true;
+      }).map(r => r.lender))];
+      
+      const result: { lender: string; stage: string; stageIndex: number; convPct: number; lmtdConvPct: number }[] = [];
+
+      lenderNames.forEach(lender => {
+        stageIndices.forEach((idx, si) => {
+          if (si === 0) return;
+          const prevIdx = stageIndices[si - 1];
+          const curr = byLenderIdx[`${lender}|${idx}`] || 0;
+          const prev = byLenderIdx[`${lender}|${prevIdx}`] || 0;
+          const lmtdCurr = lmtdByLenderStage[`${lender}|${idx}`] || 0;
+          const lmtdPrev = lmtdByLenderStage[`${lender}|${prevIdx}`] || 0;
+          const stageName = labelByIndex[idx] ?? `Stage ${idx}`;
+          result.push({
+            lender,
+            stage: stageName,
+            stageIndex: idx,
+            convPct: prev > 0 ? parseFloat(((curr / prev) * 100).toFixed(1)) : 0,
+            lmtdConvPct: lmtdPrev > 0 ? parseFloat(((lmtdCurr / lmtdPrev) * 100).toFixed(1)) : 0,
+          });
+        });
+      });
+      return result;
+    }
+    
+    // Fallback to L2 data if lender marketplace data not available
+    const lenderRows = l2Data.filter((r) => r.month_start === "1.MTD" && !r.sub_stage && Math.floor(r.major_index) === r.major_index && r.major_index < 1000 && r.major_index !== 1);
+    
+    if (lenderRows.length === 0) return [];
+    
+    // Get LMTD data for comparison
+    const lmtdByLenderStage: Record<string, number> = {};
     l2Data.filter((r) => r.month_start === "2.LMTD" && !r.sub_stage && Math.floor(r.major_index) === r.major_index)
       .forEach((r) => {
         if (effectiveProductType !== "All" && r.product_type !== effectiveProductType) return;
-        if (effectiveFlow !== "All" && r.isautoleadcreated !== effectiveFlow) return;
+        if (!l2RowMatchesFlowFilter(effectiveFlow, r)) return;
         const key = `${r.lender}|${r.major_index}`;
-        if (!lmtdByLenderStage[key]) lmtdByLenderStage[key] = { leads: 0, prevLeads: 0 };
-        lmtdByLenderStage[key].leads += r.leads;
+        lmtdByLenderStage[key] = (lmtdByLenderStage[key] || 0) + r.leads;
       });
 
+    // Aggregate by lender × index
     const byLenderIdx: Record<string, number> = {};
     lenderRows.forEach((r) => {
+      if (effectiveProductType !== "All" && r.product_type !== effectiveProductType) return;
+      if (!l2RowMatchesFlowFilter(effectiveFlow, r)) return;
       const key = `${r.lender}|${r.major_index}`;
       byLenderIdx[key] = (byLenderIdx[key] || 0) + r.leads;
     });
 
     const stageIndices = [...new Set(lenderRows.map((r) => r.major_index))].sort((a, b) => a - b);
-    const lenderNames = [...new Set(lenderRows.map((r) => r.lender))];
-    const result: { lender: string; stage: string; convPct: number; lmtdConvPct: number }[] = [];
+    const lenderNames = [...new Set(lenderRows.filter(r => {
+      if (effectiveProductType !== "All" && r.product_type !== effectiveProductType) return false;
+      if (!l2RowMatchesFlowFilter(effectiveFlow, r)) return false;
+      return true;
+    }).map((r) => r.lender))];
+
+    const l2LabelByIndex = canonicalMajorStageByIndex(
+      lenderRows.map((r) => ({
+        major_index: r.major_index,
+        major_stage: r.original_major_stage,
+        leads: r.leads,
+      }))
+    );
+    
+    const result: { lender: string; stage: string; stageIndex: number; convPct: number; lmtdConvPct: number }[] = [];
 
     lenderNames.forEach((lender) => {
       stageIndices.forEach((idx, si) => {
@@ -1060,18 +1062,20 @@ export default function FunnelSummary() {
         const prevIdx = stageIndices[si - 1];
         const curr = byLenderIdx[`${lender}|${idx}`] || 0;
         const prev = byLenderIdx[`${lender}|${prevIdx}`] || 0;
-        const lmtdCurr = lmtdByLenderStage[`${lender}|${idx}`]?.leads || 0;
-        const lmtdPrev = lmtdByLenderStage[`${lender}|${prevIdx}`]?.leads || 0;
-        const stageName = lenderRows.find((r) => r.major_index === idx)?.major_stage || `Stage ${idx}`;
+        const lmtdCurr = lmtdByLenderStage[`${lender}|${idx}`] || 0;
+        const lmtdPrev = lmtdByLenderStage[`${lender}|${prevIdx}`] || 0;
+        const stageName = l2LabelByIndex[idx] ?? `Stage ${idx}`;
         result.push({
-          lender, stage: stageName,
+          lender,
+          stage: stageName,
+          stageIndex: idx,
           convPct: prev > 0 ? parseFloat(((curr / prev) * 100).toFixed(1)) : 0,
           lmtdConvPct: lmtdPrev > 0 ? parseFloat(((lmtdCurr / lmtdPrev) * 100).toFixed(1)) : 0,
         });
       });
     });
     return result;
-  }, [isLenderFiltered, lenderFunnel, l2Data, effectiveProductType, effectiveFlow]);
+  }, [isLenderFiltered, lenderMktFunnelData, l2Data, effectiveProductType, effectiveFlow]);
 
   // ─── Ratio metrics: Disb/W, Disb/BRE1, Disb/Child — MTD vs LMTD conv % ──
   const ratioMetrics = useMemo(() => {
@@ -1114,16 +1118,16 @@ export default function FunnelSummary() {
     const match = (r: L2AnalysisRow) => {
       if (effectiveLender !== "All" && r.lender !== effectiveLender) return false;
       if (effectiveProductType !== "All" && r.product_type !== effectiveProductType) return false;
-      if (effectiveFlow !== "All" && r.isautoleadcreated !== effectiveFlow) return false;
+      if (!l2RowMatchesFlowFilter(effectiveFlow, r)) return false;
       return true;
     };
     const idx = funnelStages.findIndex((s) => s.index === selectedStageIndex);
     if (idx <= 0) return [];
     const prevIdx = funnelStages[idx - 1].index;
-    const mtdRows = l2Data.filter(
+    const mtdRows = drawerL2ForModal.filter(
       (r) => r.month_start === "1.MTD" && !r.sub_stage && match(r)
     );
-    const lmtdRows = l2Data.filter(
+    const lmtdRows = drawerL2ForModal.filter(
       (r) => r.month_start === "2.LMTD" && !r.sub_stage && match(r)
     );
     const byKey: Record<
@@ -1168,7 +1172,7 @@ export default function FunnelSummary() {
   }, [
     selectedStageIndex,
     funnelStages,
-    l2Data,
+    drawerL2ForModal,
     effectiveLender,
     effectiveProductType,
     effectiveFlow,
@@ -1184,8 +1188,8 @@ export default function FunnelSummary() {
       if (effectiveProductType !== "All" && r.product_type !== effectiveProductType) return false;
       return true;
     };
-    const mtdRows = l2Data.filter((r) => r.month_start === "1.MTD" && !r.sub_stage && match(r));
-    const lmtdRows = l2Data.filter((r) => r.month_start === "2.LMTD" && !r.sub_stage && match(r));
+    const mtdRows = drawerL2ForModal.filter((r) => r.month_start === "1.MTD" && !r.sub_stage && match(r));
+    const lmtdRows = drawerL2ForModal.filter((r) => r.month_start === "2.LMTD" && !r.sub_stage && match(r));
     const byFlow: Record<string, { mtdCur: number; mtdPrev: number; lmtdCur: number; lmtdPrev: number }> = {};
     mtdRows.forEach((r) => {
       if (r.major_index !== selectedStageIndex && r.major_index !== prevIdx) return;
@@ -1220,14 +1224,14 @@ export default function FunnelSummary() {
         };
       })
       .sort((a, b) => b.mtdLeads - a.mtdLeads);
-  }, [selectedStageIndex, funnelStages, l2Data, effectiveLender, effectiveProductType]);
+  }, [selectedStageIndex, funnelStages, drawerL2ForModal, effectiveLender, effectiveProductType]);
 
   const subStagesForDrawer: SubStageRow[] = useMemo(() => {
     if (selectedStageIndex == null) return [];
     const match = (r: L2AnalysisRow) => {
       if (effectiveLender !== "All" && r.lender !== effectiveLender) return false;
       if (effectiveProductType !== "All" && r.product_type !== effectiveProductType) return false;
-      if (effectiveFlow !== "All" && r.isautoleadcreated !== effectiveFlow) return false;
+      if (!l2RowMatchesFlowFilter(effectiveFlow, r)) return false;
       return true;
     };
 
@@ -1237,21 +1241,21 @@ export default function FunnelSummary() {
     if (idx <= 0) return [];
     const prevStageIdx = funnelStages[idx - 1].index;
 
-    const mtdSub = l2Data.filter(
+    const mtdSub = drawerL2ForModal.filter(
       (r) =>
         r.month_start === "1.MTD" &&
         r.sub_stage &&
         Math.floor(r.major_index) === prevStageIdx &&
         match(r)
     );
-    const lmtdSub = l2Data.filter(
+    const lmtdSub = drawerL2ForModal.filter(
       (r) =>
         r.month_start === "2.LMTD" &&
         r.sub_stage &&
         Math.floor(r.major_index) === prevStageIdx &&
         match(r)
     );
-    const mtdBase = l2Data
+    const mtdBase = drawerL2ForModal
       .filter(
         (r) =>
           r.month_start === "1.MTD" &&
@@ -1260,7 +1264,7 @@ export default function FunnelSummary() {
           match(r)
       )
       .reduce((s, r) => s + r.leads, 0);
-    const lmtdBase = l2Data
+    const lmtdBase = drawerL2ForModal
       .filter(
         (r) =>
           r.month_start === "2.LMTD" &&
@@ -1300,7 +1304,6 @@ export default function FunnelSummary() {
     });
 
     const totalMtdStuck = Object.values(mtdMap).reduce((s, v) => s + v, 0);
-    const TERMINAL = new Set(Object.keys(MOCK_FAILURE_REASONS));
     return Array.from(new Set([...Object.keys(mtdMap), ...Object.keys(lmtdMap)]))
       .map((sub) => ({
         sub_stage: sub,
@@ -1316,18 +1319,17 @@ export default function FunnelSummary() {
                 ).toFixed(2)
               )
             : null,
-        is_terminal: TERMINAL.has(sub),
+        is_terminal: heuristicTerminalSubStage(sub),
         lender_flow_detail: detailMap[sub] || [],
       }))
       .sort((a, b) => b.mtd_leads - a.mtd_leads);
   }, [
     selectedStageIndex,
     funnelStages,
-    l2Data,
+    drawerL2ForModal,
     effectiveLender,
     effectiveProductType,
     effectiveFlow,
-    MOCK_FAILURE_REASONS,
   ]);
 
   const prevStageNameForDrawer: string | undefined = useMemo(() => {
@@ -1384,7 +1386,7 @@ export default function FunnelSummary() {
     const match = (r: L2AnalysisRow) => {
       if (effectiveLender !== "All" && r.lender !== effectiveLender) return false;
       if (effectiveProductType !== "All" && r.product_type !== effectiveProductType) return false;
-      if (effectiveFlow !== "All" && r.isautoleadcreated !== effectiveFlow) return false;
+      if (!l2RowMatchesFlowFilter(effectiveFlow, r)) return false;
       return true;
     };
 
@@ -1590,9 +1592,58 @@ export default function FunnelSummary() {
     return g ? { stage: g.stage, index: g.index, isGlobal: g.isGlobal, droppedCount: g.droppedCount, totalCount: g.totalCount, worstLender: g.worstLender, worstProduct: g.worstProduct } : undefined;
   }, [selectedStageIndex, globalVsSpecific]);
 
-  // ─── Top 4-5 key insights across entire funnel (PM-focused) ────────
-  type FunnelInsightItem = { text: string; severity: "critical" | "warning" | "good"; stageIndex: number; stage: string; lender?: string; deltaPp: number };
-  const topFunnelInsightsStrip: FunnelInsightItem[] = useMemo(() => {
+  // ─── Top key insights across entire funnel (PM-focused) ───────────
+  type FunnelInsightItem = {
+    text: string;
+    subtitle?: string;
+    detailLine?: string;
+    severity: "critical" | "warning" | "good";
+    stageIndex: number;
+    stage: string;
+    lender?: string;
+    deltaPp: number;
+  };
+
+  const keyFocusStagePairs = useMemo(
+    () =>
+      funnelStagesWithConv.length < 2
+        ? []
+        : funnelStagesWithConv.slice(1).map((cur, i) => {
+            const prev = funnelStagesWithConv[i];
+            return {
+              prevIdx: prev.index,
+              curIdx: cur.index,
+              prevName: prev.name,
+              curName: cur.name,
+            };
+          }),
+    [funnelStagesWithConv]
+  );
+
+  /** L2 (lender × flow × stage) + lender marketplace heatmap (6–15), indexed for speed. */
+  const granularKeyFocusItems: FunnelInsightItem[] = useMemo(() => {
+    if ((!l2Data.length && !lenderMktFunnelData.length) || keyFocusStagePairs.length === 0) return [];
+    return buildKeyFocusStripItems(
+      l2Data,
+      lenderMktFunnelData,
+      keyFocusStagePairs,
+      {
+        lender: effectiveLender,
+        productType: effectiveProductType,
+        flow: effectiveFlow,
+      },
+      { maxItems: KEY_FOCUS_CAP, minPrevLmtd: 8, maxDeltaPp: -0.45 }
+    );
+  }, [
+    l2Data,
+    lenderMktFunnelData,
+    keyFocusStagePairs,
+    effectiveLender,
+    effectiveProductType,
+    effectiveFlow,
+  ]);
+
+  const legacyTopFunnelInsightsStrip: FunnelInsightItem[] = useMemo(() => {
     const items: FunnelInsightItem[] = [];
 
     funnelStagesWithConv.forEach((s, i) => {
@@ -1644,15 +1695,30 @@ export default function FunnelSummary() {
     });
 
     items.sort((a, b) => a.deltaPp - b.deltaPp);
-    return items.slice(0, 5);
+    return items.slice(0, 8);
   }, [funnelStagesWithConv, globalVsSpecific]);
+
+  const topFunnelInsightsStrip: FunnelInsightItem[] = useMemo(() => {
+    if (!granularKeyFocusItems.length) return legacyTopFunnelInsightsStrip.slice(0, KEY_FOCUS_CAP);
+    if (granularKeyFocusItems.length >= KEY_FOCUS_CAP) return granularKeyFocusItems.slice(0, KEY_FOCUS_CAP);
+    const merged = [...granularKeyFocusItems];
+    const dedupe = new Set(merged.map((m) => `${m.stageIndex}|${m.text}`));
+    for (const leg of legacyTopFunnelInsightsStrip) {
+      if (merged.length >= KEY_FOCUS_CAP) break;
+      const k = `${leg.stageIndex}|${leg.text}`;
+      if (dedupe.has(k)) continue;
+      dedupe.add(k);
+      merged.push(leg);
+    }
+    return merged;
+  }, [granularKeyFocusItems, legacyTopFunnelInsightsStrip]);
 
   const lenderRowsForStage: { lender: string; mtdLeads: number; lmtdLeads: number; mtdConv: number | null; lmtdConv: number | null; countDiffPct: number | null; deltaPp: number | null }[] = useMemo(() => {
     if (selectedStageIndex == null) return [];
     const match = (r: L2AnalysisRow) => {
       if (effectiveLender !== "All" && r.lender !== effectiveLender) return false;
       if (effectiveProductType !== "All" && r.product_type !== effectiveProductType) return false;
-      if (effectiveFlow !== "All" && r.isautoleadcreated !== effectiveFlow) return false;
+      if (!l2RowMatchesFlowFilter(effectiveFlow, r)) return false;
       return true;
     };
     const idx = funnelStages.findIndex((s) => s.index === selectedStageIndex);
@@ -1660,7 +1726,7 @@ export default function FunnelSummary() {
     const prevIdx = funnelStages[idx - 1].index;
     const byLender: Record<string, { mtdPrev: number; mtdCur: number; lmtdPrev: number; lmtdCur: number }> = {};
     ["1.MTD", "2.LMTD"].forEach((period) => {
-      const rows = l2Data.filter((r) => r.month_start === period && !r.sub_stage && match(r));
+      const rows = drawerL2ForModal.filter((r) => r.month_start === period && !r.sub_stage && match(r));
       rows.forEach((r) => {
         if (r.major_index !== selectedStageIndex && r.major_index !== prevIdx) return;
         if (!byLender[r.lender]) byLender[r.lender] = { mtdPrev: 0, mtdCur: 0, lmtdPrev: 0, lmtdCur: 0 };
@@ -1683,7 +1749,7 @@ export default function FunnelSummary() {
         return { lender, mtdLeads: v.mtdCur, lmtdLeads: v.lmtdCur, mtdConv, lmtdConv, countDiffPct, deltaPp };
       })
       .sort((a, b) => (a.deltaPp ?? 0) - (b.deltaPp ?? 0));
-  }, [selectedStageIndex, funnelStages, l2Data, effectiveLender, effectiveProductType, effectiveFlow]);
+  }, [selectedStageIndex, funnelStages, drawerL2ForModal, effectiveLender, effectiveProductType, effectiveFlow]);
 
   type LenderFlowL2Row = { lender: string; flow: string; l2Stage: string; mtdLeads: number; lmtdLeads: number; countDiffPct: number | null; mtdPrevStage?: number; lmtdPrevStage?: number };
   const lenderFlowL2RowsForStage: LenderFlowL2Row[] = useMemo(() => {
@@ -1691,7 +1757,7 @@ export default function FunnelSummary() {
     const match = (r: L2AnalysisRow) => {
       if (effectiveLender !== "All" && r.lender !== effectiveLender) return false;
       if (effectiveProductType !== "All" && r.product_type !== effectiveProductType) return false;
-      if (effectiveFlow !== "All" && r.isautoleadcreated !== effectiveFlow) return false;
+      if (!l2RowMatchesFlowFilter(effectiveFlow, r)) return false;
       return true;
     };
     const idx = funnelStages.findIndex((s) => s.index === selectedStageIndex);
@@ -1700,7 +1766,7 @@ export default function FunnelSummary() {
     const rows: LenderFlowL2Row[] = [];
 
     const byLenderFlow: Record<string, { mtdPrev: number; mtdCur: number; lmtdPrev: number; lmtdCur: number }> = {};
-    l2Data.filter((r) => !r.sub_stage && match(r)).forEach((r) => {
+    drawerL2ForModal.filter((r) => !r.sub_stage && match(r)).forEach((r) => {
       if (r.major_index !== selectedStageIndex && r.major_index !== prevIdx) return;
       const key = `${r.lender}||${r.isautoleadcreated || "—"}`;
       if (!byLenderFlow[key]) byLenderFlow[key] = { mtdPrev: 0, mtdCur: 0, lmtdPrev: 0, lmtdCur: 0 };
@@ -1720,7 +1786,7 @@ export default function FunnelSummary() {
     });
 
     const byLenderFlowL2: Record<string, { mtd: number; lmtd: number }> = {};
-    l2Data.filter((r) => r.sub_stage && Math.floor(r.major_index) === prevIdx && match(r)).forEach((r) => {
+    drawerL2ForModal.filter((r) => r.sub_stage && Math.floor(r.major_index) === prevIdx && match(r)).forEach((r) => {
       const key = `${r.lender}||${r.isautoleadcreated || "—"}||${r.sub_stage!}`;
       if (!byLenderFlowL2[key]) byLenderFlowL2[key] = { mtd: 0, lmtd: 0 };
       if (r.month_start === "1.MTD") byLenderFlowL2[key].mtd += r.leads;
@@ -1732,7 +1798,7 @@ export default function FunnelSummary() {
       rows.push({ lender, flow, l2Stage, mtdLeads: v.mtd, lmtdLeads: v.lmtd, countDiffPct });
     });
     return rows;
-  }, [selectedStageIndex, funnelStages, l2Data, effectiveLender, effectiveProductType, effectiveFlow]);
+  }, [selectedStageIndex, funnelStages, drawerL2ForModal, effectiveLender, effectiveProductType, effectiveFlow]);
 
   /** L2 stages by lender (e.g. BRE2_REQUESTED in SMFG) — aggregated from lenderFlowL2 where l2Stage !== "Overall" */
   type LenderL2Row = { lender: string; l2Stage: string; mtdLeads: number; lmtdLeads: number; countDiffPct: number | null };
@@ -1760,14 +1826,14 @@ export default function FunnelSummary() {
     const match = (r: L2AnalysisRow) => {
       if (effectiveLender !== "All" && r.lender !== effectiveLender) return false;
       if (effectiveProductType !== "All" && r.product_type !== effectiveProductType) return false;
-      if (effectiveFlow !== "All" && r.isautoleadcreated !== effectiveFlow) return false;
+      if (!l2RowMatchesFlowFilter(effectiveFlow, r)) return false;
       return true;
     };
     const idx = funnelStages.findIndex((s) => s.index === selectedStageIndex);
     if (idx <= 0) return [];
     const prevIdx = funnelStages[idx - 1].index;
     const byLenderFlow: Record<string, { mtdPrev: number; mtdCur: number; lmtdPrev: number; lmtdCur: number }> = {};
-    l2Data.filter((r) => !r.sub_stage && match(r)).forEach((r) => {
+    drawerL2ForModal.filter((r) => !r.sub_stage && match(r)).forEach((r) => {
       if (r.major_index !== selectedStageIndex && r.major_index !== prevIdx) return;
       const key = `${r.lender}||${r.isautoleadcreated || "—"}`;
       if (!byLenderFlow[key]) byLenderFlow[key] = { mtdPrev: 0, mtdCur: 0, lmtdPrev: 0, lmtdCur: 0 };
@@ -1798,7 +1864,7 @@ export default function FunnelSummary() {
           deltaPp,
         };
       });
-  }, [selectedStageIndex, funnelStages, l2Data, effectiveLender, effectiveProductType, effectiveFlow]);
+  }, [selectedStageIndex, funnelStages, drawerL2ForModal, effectiveLender, effectiveProductType, effectiveFlow]);
 
   // ─── SECTION D: Leakage Impact on Disbursals ──────────────────────
   const leakageImpact = useMemo(() => {
@@ -1863,9 +1929,14 @@ export default function FunnelSummary() {
     if (!isLenderFiltered) return null;
     const totalDisb = lenderDisb.reduce((s, r) => s + r.disbursed, 0);
     const totalChild = lenderDisb.reduce((s, r) => s + r.child_leads, 0);
-    const amountCr = (totalDisb * AVG_ATS) / 100;
-    const lmtdDisb = Math.round(totalDisb * LMTD_FACTOR);
-    const lmtdAmountCr = amountCr * LMTD_FACTOR;
+    const amtFromApi = lenderDisb.reduce((s, r) => s + (r.amt_cr ?? 0), 0);
+    const lmtdAmtFromApi = lenderDisb.reduce((s, r) => s + (r.lmtd_amt_cr ?? 0), 0);
+    const lmtdDisbFromApi = lenderDisb.reduce((s, r) => s + (r.lmtd_disbursed ?? 0), 0);
+    const amountCr = amtFromApi > 0 ? amtFromApi : (totalDisb * AVG_ATS) / 100;
+    const lmtdDisb =
+      lmtdDisbFromApi > 0 ? lmtdDisbFromApi : Math.round(totalDisb * LMTD_FACTOR);
+    const lmtdAmountCr =
+      lmtdAmtFromApi > 0 ? lmtdAmtFromApi : amountCr * LMTD_FACTOR;
     const growth = lmtdDisb > 0 ? ((totalDisb - lmtdDisb) / lmtdDisb) * 100 : 0;
     const amtGrowth = lmtdAmountCr > 0 ? ((amountCr - lmtdAmountCr) / lmtdAmountCr) * 100 : 0;
     const convPct = totalChild > 0 ? (totalDisb / totalChild) * 100 : 0;
@@ -1876,19 +1947,23 @@ export default function FunnelSummary() {
 
   const byProduct = useMemo(() => {
     if (!isLenderFiltered) return [];
-    const map: Record<string, { disb: number; child: number; lmtd: number }> = {};
+    const map: Record<string, { disb: number; child: number; lmtd: number; amt: number; lmtdAmt: number }> = {};
     lenderDisb.forEach((r) => {
-      if (!map[r.product_type]) map[r.product_type] = { disb: 0, child: 0, lmtd: 0 };
+      if (!map[r.product_type]) map[r.product_type] = { disb: 0, child: 0, lmtd: 0, amt: 0, lmtdAmt: 0 };
       map[r.product_type].disb += r.disbursed;
       map[r.product_type].child += r.child_leads;
-      map[r.product_type].lmtd += Math.round(r.disbursed * LMTD_FACTOR);
+      map[r.product_type].lmtd += r.lmtd_disbursed ?? Math.round(r.disbursed * LMTD_FACTOR);
+      map[r.product_type].amt += r.amt_cr ?? 0;
+      map[r.product_type].lmtdAmt += r.lmtd_amt_cr ?? 0;
     });
     return Object.entries(map).map(([pt, v]) => ({
       product_type: pt,
       disbursed: v.disb,
       child: v.child,
       lmtd: v.lmtd,
-      amount_cr: parseFloat(((v.disb * AVG_ATS) / 100).toFixed(1)),
+      amount_cr: parseFloat(
+        (v.amt > 0 ? v.amt : (v.disb * AVG_ATS) / 100).toFixed(1)
+      ),
       conv: v.child > 0 ? parseFloat(((v.disb / v.child) * 100).toFixed(1)) : 0,
       growth: v.lmtd > 0 ? parseFloat((((v.disb - v.lmtd) / v.lmtd) * 100).toFixed(1)) : 0,
     })).sort((a, b) => b.disbursed - a.disbursed);
@@ -1898,7 +1973,7 @@ export default function FunnelSummary() {
   const lenderBreakdown = useMemo(() => {
     const match = (r: L2AnalysisRow) => {
       if (effectiveProductType !== "All" && r.product_type !== effectiveProductType) return false;
-      if (effectiveFlow !== "All" && r.isautoleadcreated !== effectiveFlow) return false;
+      if (!l2RowMatchesFlowFilter(effectiveFlow, r)) return false;
       return true;
     };
     const mtdRows = l2Data.filter((r) => r.month_start === "1.MTD" && !r.sub_stage && Math.floor(r.major_index) === r.major_index && r.major_index < 1000 && r.major_index !== 1 && match(r));
@@ -1911,7 +1986,7 @@ export default function FunnelSummary() {
     const disbByLender: Record<string, number> = {};
     disbData.forEach((r) => {
       if (effectiveProductType !== "All" && r.product_type !== effectiveProductType) return;
-      if (effectiveFlow !== "All" && r.isautoleadcreated !== effectiveFlow) return;
+      if (!l2RowMatchesFlowFilter(effectiveFlow, r)) return;
       disbByLender[r.lender] = (disbByLender[r.lender] || 0) + r.disbursed;
     });
     return { workableByLender, childByLender, disbByLender };
@@ -1925,10 +2000,10 @@ export default function FunnelSummary() {
     const workableChart = wb > 0 ? { type: "chart" as const, title: "Lender-wise Workable Leads", chart: { type: "bar" as const, data: Object.entries(lenderBreakdown.workableByLender).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value).slice(0, 8), label: "Leads", valueSuffix: "" } } : null;
     const childChart = cb > 0 ? { type: "chart" as const, title: "Lender-wise Child Leads", chart: { type: "bar" as const, data: Object.entries(lenderBreakdown.childByLender).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value).slice(0, 8), label: "Leads", valueSuffix: "" } } : null;
     const disbChart = db > 0 ? { type: "chart" as const, title: "Lender-wise Disbursals", chart: { type: "bar" as const, data: Object.entries(lenderBreakdown.disbByLender).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value).slice(0, 8), label: "Disbursed", valueSuffix: "" } } : null;
-    const productBar = byProduct.length > 0 ? { type: "chart" as const, title: "Product-wise Disbursals", chart: { type: "bar" as const, data: byProduct.map((p) => ({ name: p.product_type, value: p.disbursed })), label: "Loans", valueSuffix: "" } } : null;
-    const convChart = byProduct.length > 0 ? { type: "chart" as const, title: "Conv% by Product", chart: { type: "bar" as const, data: byProduct.map((p) => ({ name: p.product_type, value: p.conv })), label: "Conv%", valueSuffix: "%" } } : null;
+    const productBar = byProduct.length > 0 ? { type: "chart" as const, title: "Program-wise disbursals (lead_type)", chart: { type: "bar" as const, data: byProduct.map((p) => ({ name: p.product_type, value: p.disbursed })), label: "Loans", valueSuffix: "" } } : null;
+    const convChart = byProduct.length > 0 ? { type: "chart" as const, title: "Conv% by program", chart: { type: "bar" as const, data: byProduct.map((p) => ({ name: p.product_type, value: p.conv })), label: "Conv%", valueSuffix: "%" } } : null;
     const tot = lenderKPIs?.totalDisb ?? 0;
-    const shareChart = byProduct.length && tot ? { type: "chart" as const, title: "Share by Product", chart: { type: "pie" as const, data: byProduct.map((p) => ({ name: p.product_type, value: parseFloat(((p.disbursed / tot) * 100).toFixed(1)) })), label: "Share", valueSuffix: "%" } } : null;
+    const shareChart = byProduct.length && tot ? { type: "chart" as const, title: "Share by program", chart: { type: "pie" as const, data: byProduct.map((p) => ({ name: p.product_type, value: parseFloat(((p.disbursed / tot) * 100).toFixed(1)) })), label: "Share", valueSuffix: "%" } } : null;
     return { workableChart, childChart, disbChart, productBar, convChart, shareChart };
   }, [lenderBreakdown, byProduct, lenderKPIs]);
 
@@ -1940,11 +2015,11 @@ export default function FunnelSummary() {
     const hasAop = aop !== 0;
     const progressColor = achv >= 80 ? "text-emerald-600" : achv >= 50 ? "text-amber-600" : "text-red-600";
     const productBullets = byProduct.length
-      ? [`${effectiveLender} has ${byProduct.length} product type(s).`, ...byProduct.slice(0, 5).map((p) => {
+      ? [`${effectiveLender} has ${byProduct.length} program(s) (lead_type).`, ...byProduct.slice(0, 5).map((p) => {
           const share = lenderKPIs!.totalDisb ? ((p.disbursed / lenderKPIs!.totalDisb) * 100).toFixed(1) : "0";
           return `${p.product_type}: ${p.disbursed.toLocaleString("en-IN")} loans (${share}% share)`;
         })]
-      : ["No product data for this lender."];
+      : ["No program-level disbursal rows for this lender."];
     const productTypesSections: DeepDiveSection[] = [
       { type: "kpi-row", title: "Products", kpis: [{ label: "Count", value: byProduct.length }, { label: "Total Disb", value: lenderKPIs!.totalDisb.toLocaleString("en-IN") }, { label: "Top", value: byProduct[0]?.product_type || "-" }] },
       { type: "bullets", title: "Analysis", bullets: productBullets },
@@ -2053,6 +2128,19 @@ export default function FunnelSummary() {
     );
   }
 
+  if (chBootstrapError) {
+    return (
+      <div className="flex h-full min-h-[50vh] items-center justify-center p-8">
+        <div className="max-w-lg space-y-4 rounded-lg border border-destructive/30 bg-destructive/5 p-6 text-center">
+          <p className="text-sm text-destructive">{chBootstrapError}</p>
+          <Button type="button" variant="outline" size="sm" onClick={() => void loadData()}>
+            Retry
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   const handleStageClick = (stageIndex: number) => {
     setSelectedStageIndex(stageIndex);
   };
@@ -2060,7 +2148,6 @@ export default function FunnelSummary() {
   return (
     <div>
       <GuidedTour />
-      <TourHelpButton />
       <PageHeader
         title={isLenderFiltered ? `Funnel — ${effectiveLender}` : "Funnel Summary"}
         description={`${pL} vs ${cL}. Click a stage to open the Stage Deep Dive.`}
@@ -2190,9 +2277,6 @@ export default function FunnelSummary() {
           onStageClick={(idx) => handleStageClick(idx)}
         />
 
-        {/* B2: Pattern Memory */}
-        <PatternMemory onStageClick={(idx) => handleStageClick(idx)} />
-
         {/* ── Ratio Metrics: Disb/W, Disb/BRE1, Disb/Child ──────────── */}
         {!isLenderFiltered && (
           <div data-tour="ratio-metrics" className="rounded-lg border bg-card p-4">
@@ -2250,8 +2334,20 @@ export default function FunnelSummary() {
                       "mt-0.5 inline-block w-2 h-2 rounded-full shrink-0",
                       ins.severity === "critical" ? "bg-red-600" : ins.severity === "warning" ? "bg-amber-500" : "bg-emerald-500"
                     )} />
-                    <span className="text-foreground flex-1">{ins.text}</span>
-                    <span className="text-[10px] text-muted-foreground shrink-0">View →</span>
+                    <span className="text-foreground flex-1 min-w-0">
+                      <span className="block leading-snug">{ins.text}</span>
+                      {ins.subtitle ? (
+                        <span className="block text-[10px] text-muted-foreground mt-1 leading-snug">
+                          {ins.subtitle}
+                        </span>
+                      ) : null}
+                      {ins.detailLine ? (
+                        <span className="block text-[10px] text-muted-foreground/90 mt-0.5 leading-snug font-mono tabular-nums">
+                          {ins.detailLine}
+                        </span>
+                      ) : null}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground shrink-0 self-start pt-0.5">View →</span>
                   </div>
                 </button>
               ))}
@@ -2284,7 +2380,7 @@ export default function FunnelSummary() {
                   flowLenderInsightRows={flowLenderInsightRows}
                   subStages={subStagesForDrawer}
                   prevStageName={prevStageNameForDrawer}
-                  failureReasons={MOCK_FAILURE_REASONS}
+                  failureReasons={CH_FAILURE_REASONS_EMPTY}
                   onInsightClick={(lender, flow) => {
                     setInsightDDLender(lender);
                     setInsightDDFlow(flow);
@@ -2298,7 +2394,7 @@ export default function FunnelSummary() {
         </Dialog>
 
         {/* Deep-dive modal for a specific lender × flow (post-allocation) or flow-only (pre-allocation) */}
-        <Dialog open={insightDDOpen} onOpenChange={(open) => { if (!open) { setInsightDDOpen(false); setInsightDDLender(null); setInsightDDFlow(null); setL2DrillStage(null); setL2DrillView(null); setL2ReasonDrill(null); } }}>
+        <Dialog open={insightDDOpen} onOpenChange={(open) => { if (!open) { setInsightDDOpen(false); setInsightDDLender(null); setInsightDDFlow(null); } }}>
           <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto p-6">
             <DialogHeader>
               <DialogTitle className="text-left text-sm">
@@ -2459,17 +2555,12 @@ export default function FunnelSummary() {
                           <span className="text-right">{cL}</span>
                           <span className="text-right">Stuck Δ%</span>
                         </div>
-                        {[...l2Rows].sort((a, b) => (b.countDiffPct ?? 0) - (a.countDiffPct ?? 0)).map((r, i) => {
-                          const isExpanded = l2DrillStage === r.l2Stage;
-                          const deepDive = MOCK_L2_DEEP_DIVE[r.l2Stage];
-                          const hasData = !!deepDive;
-                          return (
+                        {[...l2Rows].sort((a, b) => (b.countDiffPct ?? 0) - (a.countDiffPct ?? 0)).map((r, i) => (
                             <div key={`${r.l2Stage}-${i}`} className={cn(
                               "border-b border-border/40",
                               r.countDiffPct != null && r.countDiffPct > 10 ? "bg-red-50/40 dark:bg-red-900/10" :
                               r.countDiffPct != null && r.countDiffPct < -10 ? "bg-emerald-50/30 dark:bg-emerald-900/10" : ""
                             )}>
-                              {/* Main row */}
                               <div className="grid grid-cols-[1fr_60px_60px_70px] gap-1 items-center py-1.5 text-xs">
                                 <span className="font-medium pr-1">{r.l2Stage.replace(/_/g, " ")}</span>
                                 <span className="text-right tabular-nums">{r.mtdLeads.toLocaleString("en-IN")}</span>
@@ -2478,201 +2569,11 @@ export default function FunnelSummary() {
                                   {r.countDiffPct != null ? `${r.countDiffPct >= 0 ? "+" : ""}${r.countDiffPct.toFixed(1)}%` : "—"}
                                 </span>
                               </div>
-                              {/* CTA row */}
-                              {hasData && (
-                                <div className="flex items-center gap-2 pb-1.5 pl-1">
-                                  <button
-                                    type="button"
-                                    onClick={() => { setL2DrillStage(isExpanded && l2DrillView === "reasons" ? null : r.l2Stage); setL2DrillView("reasons"); setL2ReasonDrill(null); }}
-                                    className={cn(
-                                      "text-[10px] px-2 py-0.5 rounded-full border transition-colors",
-                                      isExpanded && l2DrillView === "reasons"
-                                        ? "bg-primary text-primary-foreground border-primary"
-                                        : "border-primary/30 text-primary hover:bg-primary/10"
-                                    )}
-                                  >
-                                    {isExpanded && l2DrillView === "reasons" ? "▲ Rejection reasons" : "▼ Rejection reasons"}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => { setL2DrillStage(isExpanded && l2DrillView === "cohorts" ? null : r.l2Stage); setL2DrillView("cohorts"); setL2ReasonDrill(null); }}
-                                    className={cn(
-                                      "text-[10px] px-2 py-0.5 rounded-full border transition-colors",
-                                      isExpanded && l2DrillView === "cohorts"
-                                        ? "bg-primary text-primary-foreground border-primary"
-                                        : "border-primary/30 text-primary hover:bg-primary/10"
-                                    )}
-                                  >
-                                    {isExpanded && l2DrillView === "cohorts" ? "▲ Cohort analysis" : "▼ Cohort analysis"}
-                                  </button>
-                                </div>
-                              )}
-                              {/* Expanded panel: Rejection Reasons */}
-                              {isExpanded && l2DrillView === "reasons" && deepDive && (
-                                <div className="rounded-lg border bg-muted/20 mx-1 mb-2 p-2.5 space-y-2">
-                                  <p className="text-[10px] font-semibold text-foreground">Rejection reasons — {r.l2Stage.replace(/_/g, " ")}</p>
-                                  <p className="text-[9px] text-muted-foreground">Click any reason to view its cohort breakdown (Vintage, MCRS, NoWL, Category, Location).</p>
-                                  <div className="space-y-0">
-                                    {/* Header */}
-                                    <div className="grid grid-cols-[1fr_44px_44px_56px] gap-1 text-[10px] text-muted-foreground font-medium border-b pb-1">
-                                      <span>Reason</span><span className="text-right">MTD</span><span className="text-right">{cL}</span><span className="text-right">Δ%</span>
-                                    </div>
-                                    {[...deepDive.reasons].sort((a, b) => b.mtd - a.mtd).map((rr, ri) => {
-                                      const isReasonExpanded = l2ReasonDrill === rr.reason;
-                                      return (
-                                        <div key={`reason-${ri}`} className="border-b border-border/30">
-                                          <button
-                                            type="button"
-                                            onClick={() => setL2ReasonDrill(isReasonExpanded ? null : rr.reason)}
-                                            className="w-full grid grid-cols-[1fr_44px_44px_56px] gap-1 items-center py-1.5 text-[11px] text-left hover:bg-muted/30 rounded transition-colors"
-                                          >
-                                            <span className="pr-1 flex items-center gap-1">
-                                              <span className={cn("text-[9px]", isReasonExpanded ? "text-primary" : "text-muted-foreground")}>{isReasonExpanded ? "▼" : "▶"}</span>
-                                              <span className={cn("font-medium", isReasonExpanded && "text-primary")}>{rr.reason}</span>
-                                            </span>
-                                            <span className="text-right tabular-nums font-medium">{rr.mtd}</span>
-                                            <span className="text-right tabular-nums">{rr.lmtd}</span>
-                                            <span className={cn("text-right tabular-nums font-semibold",
-                                              rr.diffPct != null && rr.diffPct > 0 ? "text-red-600" : rr.diffPct != null && rr.diffPct < 0 ? "text-emerald-600" : ""
-                                            )}>
-                                              {rr.diffPct != null ? `${rr.diffPct >= 0 ? "+" : ""}${rr.diffPct.toFixed(1)}%` : "—"}
-                                            </span>
-                                          </button>
-                                          {/* Reason-level cohort drill-down */}
-                                          {isReasonExpanded && rr.cohorts && rr.cohorts.length > 0 && (
-                                            <div className="rounded-md border bg-background/80 mx-1 mb-1.5 p-2 space-y-2">
-                                              <p className="text-[9px] font-semibold text-primary">Cohort breakdown for: {rr.reason}</p>
-                                              {(() => {
-                                                const allSegs = rr.cohorts.flatMap((dim) =>
-                                                  dim.rows.filter((cr) => cr.diffPct != null)
-                                                    .map((cr) => ({ dim: dim.dimension, seg: cr.segment, pct: cr.diffPct as number }))
-                                                ).sort((a, b) => b.pct - a.pct);
-                                                const top2 = allSegs.slice(0, 2);
-                                                if (top2.length === 0) return null;
-                                                const hasRising = top2[0].pct > 0;
-                                                return (
-                                                  <div className={cn("rounded border px-2 py-1.5 space-y-0.5",
-                                                    hasRising ? "bg-red-50/60 dark:bg-red-900/15 border-red-200/50 dark:border-red-800/30" : "bg-amber-50/60 dark:bg-amber-900/15 border-amber-200/50 dark:border-amber-800/30"
-                                                  )}>
-                                                    {top2.map((s, si) => (
-                                                      <p key={si} className={cn("text-[10px]", s.pct > 0 ? "text-red-700 dark:text-red-400" : "text-amber-700 dark:text-amber-400")}>
-                                                        {s.pct > 0
-                                                          ? <><span className="font-semibold">↑ {s.dim}: {s.seg}</span> — stuck count up <span className="font-bold">+{s.pct.toFixed(1)}%</span> vs {cL}</>
-                                                          : <><span className="font-semibold">{s.dim}: {s.seg}</span> — least improved ({s.pct.toFixed(1)}%), monitor</>
-                                                        }
-                                                      </p>
-                                                    ))}
-                                                  </div>
-                                                );
-                                              })()}
-                                              {rr.cohorts.map((dim, di) => (
-                                                <div key={`rcoh-${di}`}>
-                                                  <p className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider mb-0.5">{dim.dimension}</p>
-                                                  <div className="grid grid-cols-[1fr_40px_40px_52px] gap-1 text-[9px] text-muted-foreground font-medium border-b pb-0.5 mb-0.5">
-                                                    <span>Segment</span><span className="text-right">MTD</span><span className="text-right">{cL}</span><span className="text-right">Δ%</span>
-                                                  </div>
-                                                  {dim.rows.map((cr, ci) => (
-                                                    <div key={`rcr-${di}-${ci}`} className={cn(
-                                                      "grid grid-cols-[1fr_40px_40px_52px] gap-1 text-[10px] py-0.5 border-b border-border/20",
-                                                      cr.diffPct != null && cr.diffPct > 15 ? "bg-red-50/50 dark:bg-red-900/10" :
-                                                      cr.diffPct != null && cr.diffPct < -15 ? "bg-emerald-50/40 dark:bg-emerald-900/10" : ""
-                                                    )}>
-                                                      <span className="font-medium">{cr.segment}</span>
-                                                      <span className="text-right tabular-nums font-medium">{cr.mtd}</span>
-                                                      <span className="text-right tabular-nums">{cr.lmtd}</span>
-                                                      <span className={cn("text-right tabular-nums font-semibold",
-                                                        cr.diffPct != null && cr.diffPct > 0 ? "text-red-600" : cr.diffPct != null && cr.diffPct < 0 ? "text-emerald-600" : ""
-                                                      )}>
-                                                        {cr.diffPct != null ? `${cr.diffPct >= 0 ? "+" : ""}${cr.diffPct.toFixed(1)}%` : "—"}
-                                                      </span>
-                                                    </div>
-                                                  ))}
-                                                </div>
-                                              ))}
-                                            </div>
-                                          )}
-                                        </div>
-                                      );
-                                    })}
-                                  </div>
-                                  {(() => {
-                                    const allSpikes = deepDive.reasons.flatMap((rr) =>
-                                      rr.cohorts.flatMap((dim) =>
-                                        dim.rows.filter((cr) => cr.diffPct != null && cr.diffPct > 0)
-                                          .map((cr) => ({ reason: rr.reason, dim: dim.dimension, seg: cr.segment, pct: cr.diffPct as number }))
-                                      )
-                                    ).sort((a, b) => b.pct - a.pct);
-                                    const top2 = allSpikes.slice(0, 2);
-                                    if (top2.length === 0) {
-                                      const sorted = [...deepDive.reasons].sort((a, b) => (b.diffPct ?? 0) - (a.diffPct ?? 0));
-                                      const leastImproved = sorted.slice(0, 2);
-                                      return leastImproved.length > 0 ? (
-                                        <div className="rounded bg-amber-50/60 dark:bg-amber-900/15 border border-amber-200/50 dark:border-amber-800/30 px-2 py-1.5 space-y-0.5 mt-1">
-                                          <p className="text-[9px] font-semibold text-amber-700 dark:text-amber-400 mb-0.5">Watch areas (least improved)</p>
-                                          {leastImproved.map((rr, i) => (
-                                            <p key={i} className="text-[10px] text-amber-700 dark:text-amber-400">
-                                              • <span className="font-semibold">{rr.reason}</span> — only {rr.diffPct != null ? `${rr.diffPct.toFixed(1)}%` : "—"} change, monitor closely
-                                            </p>
-                                          ))}
-                                        </div>
-                                      ) : null;
-                                    }
-                                    return (
-                                      <div className="rounded bg-red-50/60 dark:bg-red-900/15 border border-red-200/50 dark:border-red-800/30 px-2 py-1.5 space-y-0.5 mt-1">
-                                        <p className="text-[9px] font-semibold text-red-700 dark:text-red-400 mb-0.5">Key concern areas</p>
-                                        {top2.map((s, si) => (
-                                          <p key={si} className="text-[10px] text-red-700 dark:text-red-400">
-                                            • <span className="font-semibold">{s.reason}</span> — <span className="font-semibold">{s.dim}: {s.seg}</span> up +{s.pct.toFixed(1)}% vs {cL}
-                                          </p>
-                                        ))}
-                                      </div>
-                                    );
-                                  })()}
-                                </div>
-                              )}
-                              {/* Expanded panel: Cohort Analysis */}
-                              {isExpanded && l2DrillView === "cohorts" && deepDive && (
-                                <div className="rounded-lg border bg-muted/20 mx-1 mb-2 p-2.5 space-y-3">
-                                  <p className="text-[10px] font-semibold text-foreground">Cohort analysis — {r.l2Stage.replace(/_/g, " ")}</p>
-                                  {deepDive.cohorts.map((dim, di) => (
-                                    <div key={`dim-${di}`}>
-                                      <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">{dim.dimension}</p>
-                                      <table className="w-full text-[11px] border-collapse">
-                                        <thead>
-                                          <tr className="border-b text-muted-foreground text-left">
-                                            <th className="py-1 pr-2 font-medium">Segment</th>
-                                            <th className="py-1 pr-1 text-right font-medium w-12">MTD</th>
-                                            <th className="py-1 pr-1 text-right font-medium w-12">{cL}</th>
-                                            <th className="py-1 text-right font-medium w-14">Δ%</th>
-                                          </tr>
-                                        </thead>
-                                        <tbody>
-                                          {dim.rows.sort((a, b) => b.mtd - a.mtd).map((cr, ci) => (
-                                            <tr key={`cohort-${di}-${ci}`} className={cn(
-                                              "border-b border-border/30",
-                                              cr.diffPct != null && cr.diffPct > 15 ? "bg-red-50/40 dark:bg-red-900/10" :
-                                              cr.diffPct != null && cr.diffPct < -15 ? "bg-emerald-50/30 dark:bg-emerald-900/10" : ""
-                                            )}>
-                                              <td className="py-1 pr-2 font-medium">{cr.segment}</td>
-                                              <td className="py-1 pr-1 text-right tabular-nums font-medium">{cr.mtd}</td>
-                                              <td className="py-1 pr-1 text-right tabular-nums">{cr.lmtd}</td>
-                                              <td className={cn("py-1 text-right tabular-nums font-semibold",
-                                                cr.diffPct != null && cr.diffPct > 0 ? "text-red-600" : cr.diffPct != null && cr.diffPct < 0 ? "text-emerald-600" : ""
-                                              )}>
-                                                {cr.diffPct != null ? `${cr.diffPct >= 0 ? "+" : ""}${cr.diffPct.toFixed(1)}%` : "—"}
-                                              </td>
-                                            </tr>
-                                          ))}
-                                        </tbody>
-                                      </table>
-                                    </div>
-                                  ))}
-                                  <p className="text-[10px] text-muted-foreground">Cohorts with <span className="text-red-600 font-medium">+Δ%</span> (red) have more stuck leads in MTD vs {cL}. Focus on these segments.</p>
-                                </div>
-                              )}
+                              <p className="text-[9px] text-muted-foreground pl-1 pb-1.5">
+                                Rejection-reason and cohort drill-downs are not loaded from ClickHouse in this build.
+                              </p>
                             </div>
-                          );
-                        })}
+                          ))}
                       </div>
                     </div>
                   ) : (
@@ -2701,7 +2602,7 @@ export default function FunnelSummary() {
           flowLenderInsightRows={flowLenderInsightRows}
           subStages={subStagesForDrawer}
           prevStageName={prevStageNameForDrawer}
-          failureReasons={MOCK_FAILURE_REASONS}
+          failureReasons={CH_FAILURE_REASONS_EMPTY}
           onLenderClick={(lender) => {
             setDrillDownType("lender");
             setDrillDownKey(lender);
@@ -2823,38 +2724,6 @@ export default function FunnelSummary() {
 
         {/* Legacy / detailed sections removed from default view per Command Funnel redesign */}
 
-        {/* ─── Pre-Funnel Metrics (only when not lender-filtered) — hidden by default ────── */}
-        {false && !isLenderFiltered && (
-          <>
-            <div>
-              <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-                Pre-Funnel
-              </h3>
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-                <ClickableKpiCard onClick={() => setKpiDive({ open: true, config: { title: "Whitelisted Base", metric: Math.round(stats.mtdWhitelisted * pF).toLocaleString("en-IN"), subtitle: "Pre-funnel audience eligible for offers", sections: [{ type: "kpi-row", title: "Period Comparison", kpis: [{ label: pL, value: Math.round(stats.mtdWhitelisted * pF).toLocaleString("en-IN"), sub: "MTD" }, { label: cL, value: Math.round(stats.lmtdWhitelisted * cF).toLocaleString("en-IN"), sub: "LMTD" }, { label: "Growth", value: `${stats.lmtdWhitelisted > 0 ? (((stats.mtdWhitelisted * pF) - (stats.lmtdWhitelisted * cF)) / (stats.lmtdWhitelisted * cF) * 100).toFixed(1) : 0}%`, color: (stats.mtdWhitelisted * pF) >= (stats.lmtdWhitelisted * cF) ? "text-emerald-600" : "text-red-600" }] }, { type: "bullets", title: "Analysis", bullets: ["Whitelisted base represents users eligible for lending offers.", "Higher base typically correlates with more downstream workable leads.", "Mock data — derived from funnel volume estimates."] }] } })}>
-                  <QuickStat label="Whitelisted Base" mtd={Math.round(stats.mtdWhitelisted * pF)} lmtd={Math.round(stats.lmtdWhitelisted * cF)} mock />
-                </ClickableKpiCard>
-                <ClickableKpiCard onClick={() => setKpiDive({ open: true, config: { title: "Unique Impressions", metric: Math.round(stats.mtdImpressions * pF).toLocaleString("en-IN"), subtitle: "Offer impressions served to users", sections: [{ type: "kpi-row", title: "Period Comparison", kpis: [{ label: pL, value: Math.round(stats.mtdImpressions * pF).toLocaleString("en-IN") }, { label: cL, value: Math.round(stats.lmtdImpressions * cF).toLocaleString("en-IN") }, { label: "Growth", value: `${stats.lmtdImpressions > 0 ? (((stats.mtdImpressions * pF) - (stats.lmtdImpressions * cF)) / (stats.lmtdImpressions * cF) * 100).toFixed(1) : 0}%`, color: (stats.mtdImpressions * pF) >= (stats.lmtdImpressions * cF) ? "text-emerald-600" : "text-red-600" }] }, { type: "bullets", title: "Analysis", bullets: ["Impressions indicate reach of lending offers.", "Higher impressions with stable CTR drive more clicks.", "Mock data — derived from funnel volume estimates."] }] } })}>
-                  <QuickStat label="Unique Impressions" mtd={Math.round(stats.mtdImpressions * pF)} lmtd={Math.round(stats.lmtdImpressions * cF)} mock />
-                </ClickableKpiCard>
-                <ClickableKpiCard onClick={() => setKpiDive({ open: true, config: { title: "Unique Clicks", metric: Math.round(stats.mtdClicks * pF).toLocaleString("en-IN"), subtitle: "Users who clicked on offers", sections: [{ type: "kpi-row", title: "Period Comparison", kpis: [{ label: pL, value: Math.round(stats.mtdClicks * pF).toLocaleString("en-IN") }, { label: cL, value: Math.round(stats.lmtdClicks * cF).toLocaleString("en-IN") }, { label: "Growth", value: `${stats.lmtdClicks > 0 ? (((stats.mtdClicks * pF) - (stats.lmtdClicks * cF)) / (stats.lmtdClicks * cF) * 100).toFixed(1) : 0}%`, color: (stats.mtdClicks * pF) >= (stats.lmtdClicks * cF) ? "text-emerald-600" : "text-red-600" }] }, { type: "bullets", title: "Analysis", bullets: ["Clicks indicate user interest in offers.", "CTR = Clicks / Impressions. Higher CTR suggests better targeting.", "Mock data — derived from funnel volume estimates."] }] } })}>
-                  <QuickStat label="Unique Clicks" mtd={Math.round(stats.mtdClicks * pF)} lmtd={Math.round(stats.lmtdClicks * cF)} mock />
-                </ClickableKpiCard>
-                <ClickableKpiCard onClick={() => setKpiDive({ open: true, config: { title: "LPV (Flow2 only)", metric: Math.round(stats.mtdLPV * pF).toLocaleString("en-IN"), subtitle: "Landing Page Views — Flow2 Manual", sections: [{ type: "kpi-row", title: "Period Comparison", kpis: [{ label: pL, value: Math.round(stats.mtdLPV * pF).toLocaleString("en-IN") }, { label: cL, value: Math.round(stats.lmtdLPV * cF).toLocaleString("en-IN") }, { label: "Growth", value: `${stats.lmtdLPV > 0 ? (((stats.mtdLPV * pF) - (stats.lmtdLPV * cF)) / (stats.lmtdLPV * cF) * 100).toFixed(1) : 0}%`, color: (stats.mtdLPV * pF) >= (stats.lmtdLPV * cF) ? "text-emerald-600" : "text-red-600" }] }, { type: "bullets", title: "Analysis", bullets: ["LPV = Landing Page Views for Flow2 (Manual) users.", "FFR% = Workable Leads / LPV. Higher FFR indicates better form completion.", "Mock data — derived from Flow2 workable volume."] }] } })}>
-                  <QuickStat label="LPV (Flow2 only)" mtd={Math.round(stats.mtdLPV * pF)} lmtd={Math.round(stats.lmtdLPV * cF)} mock />
-                </ClickableKpiCard>
-                <ClickableKpiCard onClick={() => setKpiDive({ open: true, config: { title: "FFR% (Flow2)", metric: `${stats.mtdFFR.toFixed(1)}%`, subtitle: "Form Fill Rate — Flow2 only", sections: [{ type: "kpi-row", title: "Period Comparison", kpis: [{ label: pL, value: `${stats.mtdFFR.toFixed(1)}%` }, { label: cL, value: `${stats.lmtdFFR.toFixed(1)}%` }, { label: "Delta", value: `${(stats.mtdFFR - stats.lmtdFFR).toFixed(1)}pp`, color: stats.mtdFFR >= stats.lmtdFFR ? "text-emerald-600" : "text-red-600" }] }, { type: "bullets", title: "Analysis", bullets: ["FFR = Workable Leads / LPV. Measures form completion rate.", "Higher FFR indicates better landing page UX and form design.", "Check load times and form complexity if FFR drops."] }] } })}>
-                  <QuickRatio label="FFR% (Flow2)" mtd={stats.mtdFFR} lmtd={stats.lmtdFFR} />
-                </ClickableKpiCard>
-                <ClickableKpiCard onClick={() => setKpiDive({ open: true, config: { title: "Flow1 : Flow2 Ratio", metric: `${stats.flowRatio.toFixed(2)}x`, subtitle: "Auto vs Manual flow volume", sections: [{ type: "kpi-row", title: "Period Comparison", kpis: [{ label: pL, value: `${stats.flowRatio.toFixed(2)}x` }, { label: cL, value: `${stats.lmtdFlowRatio.toFixed(2)}x` }, { label: "Delta", value: `${(stats.flowRatio - stats.lmtdFlowRatio).toFixed(2)}x`, color: stats.flowRatio >= stats.lmtdFlowRatio ? "text-emerald-600" : "text-red-600" }] }, { type: "bullets", title: "Analysis", bullets: ["Flow1 (Auto) vs Flow2 (Manual) workable lead ratio.", "Ratio > 1: More auto leads. Ratio < 1: More manual leads.", "Balance depends on product mix and acquisition strategy."] }] } })}>
-                  <QuickRatio label="Flow1 : Flow2 Ratio" mtd={stats.flowRatio} lmtd={stats.lmtdFlowRatio} suffix="x" isPct={false} />
-                </ClickableKpiCard>
-              </div>
-            </div>
-            <Separator />
-          </>
-        )}
-
         {lenderKPIs && false && (
         <>
         {/* ─── Funnel Metrics (legacy, hidden by default) ────────────────── */}
@@ -2908,7 +2777,7 @@ export default function FunnelSummary() {
                   delta={lenderKPIs!.amtGrowth} icon={<Banknote className="h-5 w-5 text-emerald-600" />}
                 />
               </ClickableKpiCard>
-              <ClickableKpiCard onClick={() => setKpiDive({ open: true, config: { title: "Disbursal Conv%", metric: `${lenderKPIs!.convPct.toFixed(1)}%`, subtitle: "Child Lead → Disbursal", sections: [{ type: "kpi-row", title: "Conversion", kpis: [{ label: "Conv%", value: `${lenderKPIs!.convPct.toFixed(1)}%` }, { label: "Child Leads", value: lenderKPIs!.totalChild.toLocaleString("en-IN") }, { label: "Disbursed", value: lenderKPIs!.totalDisb.toLocaleString("en-IN") }] }, { type: "bullets", title: "Analysis", bullets: ["Conversion from child lead creation to disbursal.", "Higher conv% indicates better lender process and approval rates.", "Compare with Hero Funnel in radar chart."] }, ...(byProduct.length > 0 ? [{ type: "chart" as const, title: "Conv% by Product", chart: { type: "bar" as const, data: byProduct.map((p) => ({ name: p.product_type, value: p.conv })), label: "Conv%", valueSuffix: "%" } }] : [])] } })}>
+              <ClickableKpiCard onClick={() => setKpiDive({ open: true, config: { title: "Disbursal Conv%", metric: `${lenderKPIs!.convPct.toFixed(1)}%`, subtitle: "Child Lead → Disbursal", sections: [{ type: "kpi-row", title: "Conversion", kpis: [{ label: "Conv%", value: `${lenderKPIs!.convPct.toFixed(1)}%` }, { label: "Child Leads", value: lenderKPIs!.totalChild.toLocaleString("en-IN") }, { label: "Disbursed", value: lenderKPIs!.totalDisb.toLocaleString("en-IN") }] }, { type: "bullets", title: "Analysis", bullets: ["Conversion from child lead creation to disbursal.", "Higher conv% indicates better lender process and approval rates.", "Compare with Hero Funnel in radar chart."] }, ...(byProduct.length > 0 ? [{ type: "chart" as const, title: "Conv% by program", chart: { type: "bar" as const, data: byProduct.map((p) => ({ name: p.product_type, value: p.conv })), label: "Conv%", valueSuffix: "%" } }] : [])] } })}>
                 <KPICard title="Disbursal Conv%" value={`${lenderKPIs!.convPct.toFixed(1)}%`}
                   subtitle="Child Lead → Disbursal"
                   icon={<TrendingUp className="h-5 w-5 text-blue-600" />}
@@ -3049,7 +2918,6 @@ export default function FunnelSummary() {
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-sm font-medium">Stage Conversion: {pL} vs {cL}</CardTitle>
-                  <ChartFeedbackButton chartTitle={`Stage Conversion: ${pL} vs ${cL}`} pageName="Funnel Summary" />
                 </div>
                 <p className="text-[10px] text-muted-foreground mt-0.5">
                   Current period conversion% compared against comparison period at each funnel stage
@@ -3082,7 +2950,6 @@ export default function FunnelSummary() {
               <TrendingDown className="h-4 w-4 text-muted-foreground" />
               Funnel Drop-off &amp; Leakage Impact
             </h2>
-            <ChartFeedbackButton chartTitle="Funnel Drop-off & Leakage Impact" pageName="Funnel Summary" />
           </div>
           <p className="text-[10px] text-muted-foreground mb-3">
             Where leads drop, whether issues are structural or temporary, global or lender-specific, and the estimated disbursal impact
@@ -3173,7 +3040,6 @@ export default function FunnelSummary() {
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm font-medium">Stage Health: Drop-off, Diagnosis &amp; Impact</CardTitle>
-                <ChartFeedbackButton chartTitle="Stage Health: Drop-off, Diagnosis & Impact" pageName="Funnel Summary" />
               </div>
               <p className="text-[10px] text-muted-foreground">
                 One view combining where leads drop, whether it is structural or temporary, global or specific, and the disbursal impact
@@ -3320,7 +3186,6 @@ export default function FunnelSummary() {
               <Activity className="h-4 w-4 text-muted-foreground" />
               Funnel Drill-down
             </h2>
-            <ChartFeedbackButton chartTitle="Funnel Drill-down" pageName="Funnel Summary" />
           </div>
           <p className="text-[10px] text-muted-foreground mb-3">
             Click any stage to drill into sub-stages (L2) and failure reasons (L3)
@@ -3335,17 +3200,17 @@ export default function FunnelSummary() {
           />
         </div>
 
-        {/* Cross-Lender Conv% Comparison Table (only when not filtered to a single lender) */}
+        {/* Lender × Stage Conversion Heatmap (Stages in rows, Lenders in columns) */}
         {!isLenderFiltered && <Separator />}
         {!isLenderFiltered && <Card id="cross-lender">
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle className="text-sm font-medium">
-                  Cross-Lender Stage Conversion Comparison
+                  Lender × Stage Conversion Heatmap
                 </CardTitle>
                 <p className="text-[10px] text-muted-foreground mt-0.5">
-                  {pL} conv% per stage across all lenders. Hero (best) highlighted.
+                  {pL} conv% by stage (rows) across lenders (columns). Hero (best) highlighted.
                 </p>
               </div>
               <button
@@ -3366,34 +3231,34 @@ export default function FunnelSummary() {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-muted/50">
-                    <TableHead className="text-[10px] font-semibold sticky left-0 bg-muted/50 z-10 min-w-[100px]">
-                      Lender
+                    <TableHead className="text-[10px] font-semibold sticky left-0 bg-muted/50 z-10 min-w-[140px]">
+                      Stage
                     </TableHead>
-                    {crossLenderData.stagePairs.map(({ curIdx, stageName }) => (
+                    {crossLenderData.lenders.map((lender) => (
                       <TableHead
-                        key={curIdx}
+                        key={lender}
                         className="text-[10px] font-semibold text-center min-w-[90px]"
                       >
-                        <div>{stageName.length > 14 ? stageName.substring(0, 12) + "..." : stageName}</div>
-                        <div className="text-[8px] font-normal text-muted-foreground">#{curIdx}</div>
+                        <div>{lender.length > 14 ? lender.substring(0, 12) + "..." : lender}</div>
                       </TableHead>
                     ))}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {crossLenderData.lenders.map((lender) => (
+                  {crossLenderData.stagePairs.map(({ curIdx, stageName }) => (
                     <>
-                      {/* All-flow row */}
-                      <TableRow key={lender} className="hover:bg-muted/20">
+                      {/* All-flow stage row */}
+                      <TableRow key={`${curIdx}-all`} className="hover:bg-muted/20">
                         <TableCell className="text-xs font-semibold sticky left-0 bg-card z-10">
-                          {lender}
+                          <div>{stageName.length > 20 ? stageName.substring(0, 18) + "..." : stageName}</div>
+                          <div className="text-[8px] font-normal text-muted-foreground">#{curIdx}</div>
                         </TableCell>
-                        {crossLenderData.stagePairs.map(({ curIdx }) => {
+                        {crossLenderData.lenders.map((lender) => {
                           const conv = crossLenderData.lenderConv[lender]?.[curIdx];
                           const hero = crossLenderData.heroPerStage[curIdx];
                           const isHero = hero?.lender === lender;
                           return (
-                            <TableCell key={curIdx} className="text-center py-2">
+                            <TableCell key={`${curIdx}-${lender}`} className="text-center py-2">
                               {conv !== null && conv !== undefined ? (
                                 <span
                                   className={cn(
@@ -3421,25 +3286,23 @@ export default function FunnelSummary() {
                       {/* Flow breakdown rows */}
                       {showFlowBreakdown &&
                         crossLenderData.flows.map((flow) => {
-                          const key = `${lender}||${flow}`;
-                          const hasAnyData = crossLenderData.stagePairs.some(
-                            ({ curIdx }) => crossLenderData.lenderFlowConv[key]?.[curIdx] != null
+                          const hasAnyData = crossLenderData.lenders.some(
+                            (lender) => crossLenderData.lenderFlowConv[`${lender}||${flow}`]?.[curIdx] != null
                           );
                           if (!hasAnyData) return null;
                           return (
                             <TableRow
-                              key={`${lender}-${flow}`}
+                              key={`${curIdx}-${flow}`}
                               className="bg-muted/5 border-b border-dashed border-border/30"
                             >
                               <TableCell className="text-[10px] text-muted-foreground pl-6 sticky left-0 bg-card/95 z-10">
                                 {flow.includes("Auto") ? "Flow1 (Auto)" : "Flow2 (Manual)"}
                               </TableCell>
-                              {crossLenderData.stagePairs.map(({ curIdx }) => {
-                                const conv =
-                                  crossLenderData.lenderFlowConv[key]?.[curIdx];
+                              {crossLenderData.lenders.map((lender) => {
+                                const conv = crossLenderData.lenderFlowConv[`${lender}||${flow}`]?.[curIdx];
                                 return (
                                   <TableCell
-                                    key={curIdx}
+                                    key={`${curIdx}-${lender}-${flow}`}
                                     className="text-center py-1.5"
                                   >
                                     {conv !== null && conv !== undefined ? (

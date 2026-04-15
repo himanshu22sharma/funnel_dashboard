@@ -119,7 +119,7 @@ export function CommandFunnel({
       </div>
 
       <div className="flex flex-col gap-0 w-full max-w-4xl mx-auto">
-        {/* Header row: Conv %, LMTD count, LMTD conv %, Delta, WoW */}
+        {/* Header row: Conv %, LMTD count, LMTD conv %, Delta */}
         <div className="flex items-center gap-2 w-full pl-0 mb-1">
           <div className="w-44 max-w-[11rem] shrink-0" />
           <div className="flex-1 flex justify-center min-w-0" />
@@ -127,9 +127,6 @@ export function CommandFunnel({
           <div className="w-[62px] shrink-0 text-right text-[9px] font-medium text-muted-foreground uppercase tracking-wider">LMTD</div>
           <div className="w-[70px] shrink-0 text-right text-[9px] font-medium text-muted-foreground uppercase tracking-wider">LMTD conv %</div>
           <div className="w-[62px] shrink-0 text-right text-[9px] font-medium text-muted-foreground uppercase tracking-wider">Δ vs LMTD</div>
-          <div className="w-[52px] shrink-0 text-right text-[9px] font-medium text-muted-foreground uppercase tracking-wider" title="Week-over-Week: Change in conversion from last week to this week (last 7 days vs prior 7 days)">
-            WoW trend <span className="text-[7px] align-super">ⓘ</span>
-          </div>
         </div>
         {stages.map((stage, i) => {
           const isTopLeak = topLeakStageIndex === stage.index;
@@ -270,24 +267,6 @@ export function CommandFunnel({
                     <span className="text-muted-foreground">—</span>
                   )}
                 </button>
-                {/* WoW delta */}
-                <div className="w-[52px] shrink-0 text-right text-[10px] tabular-nums py-1">
-                  {stage.wowDeltaPp != null ? (
-                    <span className={cn(
-                      "font-semibold",
-                      stage.wowDeltaPp >= 0 ? "text-emerald-600" : "text-red-500"
-                    )}>
-                      {stage.wowDeltaPp > 0 ? "+" : ""}{stage.wowDeltaPp.toFixed(1)}pp
-                    </span>
-                  ) : i > 0 ? (
-                    <span className={cn(
-                      "font-medium",
-                      (deltaPp ?? 0) >= 0 ? "text-emerald-500/60" : "text-red-400/60"
-                    )}>
-                      {((deltaPp ?? 0) * 0.4 + (Math.random() - 0.5) * 2) > 0 ? "+" : ""}{((deltaPp ?? 0) * 0.4 + (Math.random() - 0.5) * 2).toFixed(1)}pp
-                    </span>
-                  ) : <span className="text-muted-foreground">—</span>}
-                </div>
               </div>
             </div>
           );
@@ -299,8 +278,6 @@ export function CommandFunnel({
         <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />Within range</span>
         <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-amber-400" />Watch</span>
         <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-red-500" />Abnormal</span>
-        <span className="text-[8px] text-muted-foreground/60">|</span>
-        <span className="text-[8px] text-muted-foreground/80">WoW = Week-over-Week conv% change (last 7d vs prior 7d)</span>
       </div>
 
       <p className="text-[11px] text-muted-foreground text-center max-w-4xl mx-auto">

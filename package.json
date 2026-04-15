@@ -1,0 +1,22 @@
+{
+  "name": "lending-dashboard-cc",
+  "version": "1.0.0",
+  "description": "Lending Dashboard - Connected to ClickHouse via Lending CC REST API",
+  "private": true,
+  "scripts": {
+    "sync:lending-cc": "cd dashboard && npm run sync:lending-cc",
+    "dev": "cd dashboard && npm run dev",
+    "dev:insecure-tls": "cd dashboard && npm run dev:insecure-tls",
+    "build": "cd dashboard && npm run build",
+    "start": "cd dashboard && npm run start",
+    "lint": "cd dashboard && npm run lint"
+  },
+  "keywords": [
+    "lending",
+    "analytics",
+    "dashboard",
+    "clickhouse"
+  ],
+  "author": "Team MCA",
+  "license": "MIT"
+}

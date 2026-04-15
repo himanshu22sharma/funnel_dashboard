@@ -439,14 +439,10 @@ export function StageDetailContent({
   const urgency = useMemo(() => deriveUrgency(stage.deltaPp, stage.leads), [stage.deltaPp, stage.leads]);
   const whyStyle = WHY_STYLE[whyType];
   const urgStyle = URGENCY_STYLE[urgency];
-  const isRegression = whyType === "Product" || whyType === "Tech";
-  const [narrativesOpen, setNarrativesOpen] = useState(true);
-
-  // ── C3: Narrative section content derivations ──────────────
+  // ── C3: Header badge (revenue at risk) ──────────────
   const leadDrop = stage.lmtdLeads > 0 ? stage.lmtdLeads - stage.leads : 0;
   const avgTicket = 85000;
   const lossCrEom = ((Math.abs(leadDrop) * avgTicket) / 1e7) * (28 / 23);
-  const lossCrEod = lossCrEom / 28;
   const scopeLabel = (() => {
     const lenderCount = flowLenderInsightRows.length > 0
       ? new Set(flowLenderInsightRows.map((r) => r.lender)).size
@@ -454,30 +450,6 @@ export function StageDetailContent({
     if (lenderCount <= 1 && flowRows.length <= 1) return "Specific";
     return "Global";
   })();
-
-  // Top worsening flow/lender for "what is happening" narrative
-  const topWorseningCombo = useMemo(() => {
-    const sorted = [...flowLenderInsightRows].sort((a, b) => (a.countDiffPct ?? 0) - (b.countDiffPct ?? 0));
-    return sorted[0] ?? null;
-  }, [flowLenderInsightRows]);
-
-  // Merchant cohort narrative (mock heuristic based on stage)
-  const cohortNarrative = useMemo(() => {
-    const idx = stage.index;
-    if (idx <= 5) return "Drop is concentrated in new merchants (0-6M vintage) with ticket < ₹1L.";
-    if (idx <= 8) return "Impact is highest among Tier-2+ city merchants with MCRS decile 3-4.";
-    if (idx <= 12) return "BRE-stage drop affects high-ticket (>₹2L) merchants in Retail & Shopping.";
-    return "Late-stage drop distributed across all cohorts — likely systemic.";
-  }, [stage.index]);
-
-  // Pattern match (mock: link to recurring patterns)
-  const patternMatch = useMemo(() => {
-    const idx = stage.index;
-    if (idx === 12) return { seen: true, lastDate: "Feb 14", fix: "Ops batch schedule adjustment resolved it in 4hrs." };
-    if (idx === 8) return { seen: true, lastDate: "Jan 22", fix: "KYC vendor SLA escalation restored normal rate." };
-    if (idx === 9 || idx === 10) return { seen: true, lastDate: "Jan 3", fix: "Quarter-start BRE tightening — Risk team confirmed expected." };
-    return { seen: false, lastDate: null, fix: null };
-  }, [stage.index]);
 
   return (
     <div className="space-y-4 px-1">
@@ -535,95 +507,6 @@ export function StageDetailContent({
           </div>
         </div>
       </div>
-
-      {/* ── C3: Narrative Sections (Stage diagnosis — expanded by default) ────────────────────────────── */}
-      <button
-        type="button"
-        onClick={() => setNarrativesOpen((v) => !v)}
-        className={cn(
-          "w-full rounded-lg border px-3 py-2 text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary",
-          isRegression
-            ? "bg-red-50/50 border-red-200 dark:bg-red-900/15 dark:border-red-800/40 hover:bg-red-100/40"
-            : "bg-muted/30 border-border hover:bg-muted/50"
-        )}
-      >
-        <div className="flex items-center justify-between">
-          <span className="text-[11px] font-semibold text-foreground">
-            {isRegression ? "⚠ Likely regression — see details" : "Stage diagnosis"}
-          </span>
-          <span className="text-muted-foreground text-xs">{narrativesOpen ? "▲" : "▼"}</span>
-        </div>
-      </button>
-      {narrativesOpen && (
-        <div className={cn(
-          "rounded-lg border px-3 py-2.5 space-y-3 -mt-2 border-t-0 rounded-t-none text-[11px]",
-          isRegression ? "bg-red-50/30 border-red-200 dark:bg-red-900/10 dark:border-red-800/40" : "bg-muted/20 border-border"
-        )}>
-          {/* What is happening? */}
-          <div>
-            <p className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground mb-0.5">What is happening?</p>
-            <p className="text-foreground leading-relaxed">
-              {stage.name.replace(/_/g, " ")} conversion {stage.deltaPp != null && stage.deltaPp < 0 ? "dropped" : "changed"}{" "}
-              {stage.deltaPp != null ? `${Math.abs(stage.deltaPp).toFixed(1)}pp` : ""} vs {compareLabel}
-              {topWorseningCombo && hasLenderAllocation && (
-                <>, driven by <span className="font-semibold">{topWorseningCombo.lender}</span> in {topWorseningCombo.flow}</>
-              )}.
-            </p>
-          </div>
-          {/* Who is getting impacted? */}
-          <div>
-            <p className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground mb-0.5">Who is getting impacted?</p>
-            <p className="text-foreground leading-relaxed">{cohortNarrative}</p>
-          </div>
-          {/* Is this expected or a regression? */}
-          <div>
-            <p className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground mb-0.5">Is this expected or a regression?</p>
-            <div className="flex items-center gap-2">
-              <span className={cn(
-                "text-[10px] px-2 py-0.5 rounded-full font-semibold",
-                whyType === "Business" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" :
-                patternMatch.seen ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" :
-                "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-              )}>
-                {whyType === "Business" ? "Expected business behaviour" : patternMatch.seen ? "Known recurring pattern" : "Abnormal — likely regression"}
-              </span>
-            </div>
-          </div>
-          {/* If we do nothing... */}
-          {leadDrop > 0 && (
-            <div>
-              <p className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground mb-0.5">If we do nothing...</p>
-              <p className="text-foreground leading-relaxed">
-                At current pace, <span className="font-bold text-red-600 dark:text-red-400">~₹{lossCrEom.toFixed(1)} Cr</span> additional loss by month-end
-                {lossCrEod > 0.1 && (<> (<span className="font-semibold">~₹{lossCrEod.toFixed(1)} Cr by EOD</span>)</>)}.
-              </p>
-            </div>
-          )}
-          {/* Have we seen this before? */}
-          <div>
-            <p className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground mb-0.5">Have we seen this before?</p>
-            {patternMatch.seen ? (
-              <p className="text-foreground leading-relaxed">
-                <span className="font-semibold text-amber-600 dark:text-amber-400">Yes</span> — last seen {patternMatch.lastDate}. {patternMatch.fix}
-              </p>
-            ) : (
-              <p className="text-foreground leading-relaxed">
-                <span className="font-semibold text-red-600 dark:text-red-400">No</span> — first occurrence this month. Needs fresh investigation.
-              </p>
-            )}
-          </div>
-          {/* Recommended action */}
-          <div>
-            <p className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground mb-0.5">Recommended action</p>
-            <p className="text-foreground leading-relaxed">
-              {whyType === "Risk" && "Review BRE rule changes with Risk team. Check if policy tightening is intentional."}
-              {whyType === "Tech" && "Escalate to Eng — check vendor SLA, SDK errors, or infra degradation."}
-              {whyType === "Product" && "Review routing/pricing logic changes deployed this week. Loop in Eng + Product."}
-              {whyType === "Business" && "No immediate action needed — monitor and revisit if trend persists past 3 days."}
-            </p>
-          </div>
-        </div>
-      )}
 
       {/* Tab bar */}
       <div data-tour="stage-tabs" className="flex gap-1 bg-muted/30 rounded-lg p-1">

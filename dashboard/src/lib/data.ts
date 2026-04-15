@@ -21,9 +21,27 @@ export interface LenderFunnelRow {
   conv_pct: number | null;
 }
 
+export interface MarketplaceFunnelRow {
+  major_index: number;
+  major_stage: string;
+  leads: number;
+  period: string; // "1.MTD" or "2.LMTD"
+}
+
+export interface LenderMarketplaceRow {
+  lender: string;
+  product_type: string;
+  major_index: number;
+  major_stage: string;
+  leads: number;
+  period: string; // "1.MTD" or "2.LMTD"
+}
+
 export interface DisbursalSummaryRow {
+  /** Program dimension from OLAP `lead_type` (kept as `product_type` for filters / matrix). */
   product_type: string;
   isautoleadcreated: string;
+  /** Lender from OLAP `lender_name`. */
   lender: string;
   child_leads: number;
   disbursed: number;
@@ -40,12 +58,58 @@ export interface L2AnalysisRow {
   lender: string;
   month_start: string; // "1.MTD" or "2.LMTD"
   product_type: string;
+  /**
+   * Flow type from `isautoleadcreated` on OLAP: **Flow 1 (auto)** vs **Flow 2 (manual)**.
+   * Canonical values after normalization: {@link MARKETPLACE_FLOW_AUTO} | {@link MARKETPLACE_FLOW_MANUAL}.
+   */
   isautoleadcreated: string;
   major_index: number;
   original_major_stage: string;
   sub_stage: string | null;
   leads: number;
   stuck_pct: number | null;
+}
+
+/** Flow 1 — auto-created child lead (`isautoleadcreated` true / auto side). */
+export const MARKETPLACE_FLOW_AUTO = "Flow1(Auto)";
+/** Flow 2 — manual flow (`isautoleadcreated` false / manual side). */
+export const MARKETPLACE_FLOW_MANUAL = "Flow2(Manual)";
+
+/**
+ * Map raw ClickHouse / CSV `isautoleadcreated` to Flow 1 vs Flow 2 literals used by filters and joins.
+ */
+export function normalizeMarketplaceFlow(raw: string): string {
+  const c = raw.trim().replace(/\s+/g, " ");
+  if (!c) return "";
+  const compact = c.toLowerCase().replace(/\s+/g, "");
+  if (
+    compact === "flow1(auto)" ||
+    compact === "flow1" ||
+    compact === "true" ||
+    compact === "auto" ||
+    /^flow\s*1/.test(c.toLowerCase())
+  ) {
+    return MARKETPLACE_FLOW_AUTO;
+  }
+  if (
+    compact === "flow2(manual)" ||
+    compact === "flow2" ||
+    compact === "false" ||
+    compact === "manual" ||
+    /^flow\s*2/.test(c.toLowerCase())
+  ) {
+    return MARKETPLACE_FLOW_MANUAL;
+  }
+  return c;
+}
+
+/** Short UI label for funnel strips and tables. */
+export function formatFlowTypeForUi(flow: string): string {
+  const f = flow.trim();
+  if (!f) return "All flows";
+  if (f === MARKETPLACE_FLOW_AUTO) return "Flow 1 (Auto)";
+  if (f === MARKETPLACE_FLOW_MANUAL) return "Flow 2 (Manual)";
+  return f;
 }
 
 /** Overall disbursement summary: AOP, MTD (Cr), LMSD (Cr) by lender */
@@ -80,8 +144,15 @@ export interface DisbursalBreakdownLeadTypeRow {
 
 const BASE = process.env.NEXT_PUBLIC_BASE_PATH || "";
 
+// Always use synced ClickHouse data from /data/ch-sync/
+const L2_CSV_PATH = "/data/ch-sync/L2_Analysis.csv";
+const DISB_LENDER_CSV_PATH = "/data/ch-sync/Lender_Level_Disb_Summary.csv";
+const MARKETPLACE_FUNNEL_CSV_PATH = "/data/ch-sync/Marketplace_Funnel.csv";
+const LENDER_MARKETPLACE_FUNNEL_CSV_PATH = "/data/ch-sync/Lender_Marketplace_Funnel.csv";
+
 async function fetchCSV<T>(path: string, transform: (row: Record<string, string>) => T): Promise<T[]> {
   const res = await fetch(`${BASE}${path}?v=${Date.now()}`, { cache: "no-store" });
+  if (!res.ok) throw new Error(`Failed to fetch ${path}: ${res.statusText}`);
   const text = await res.text();
   const parsed = Papa.parse<Record<string, string>>(text, {
     header: true,
@@ -91,30 +162,18 @@ async function fetchCSV<T>(path: string, transform: (row: Record<string, string>
 }
 
 export async function fetchCompleteFunnel(): Promise<FunnelRow[]> {
-  return fetchCSV("/data/Complete_Funnel_with_Stages.csv", (row) => ({
-    product_type: row["product_type"]?.trim() || "",
-    isautoleadcreated: row["isautoleadcreated"]?.trim() || "",
-    major_index: parseInt(row["major_index"]) || 0,
-    major_stage: row["major_stage"]?.trim() || "",
-    leads: parseInt(row["Leads"]?.replace(/,/g, "")) || 0,
-    conv_pct: row["Conv%"] ? parseFloat(row["Conv%"]) : null,
-  }));
+  // Marketplace funnel data is loaded via fetchMarketplaceFunnel() instead
+  return [];
 }
 
 export async function fetchLenderFunnel(): Promise<LenderFunnelRow[]> {
-  return fetchCSV("/data/Lender_Level_Funnel_With_Stages.csv", (row) => ({
-    lender: row["lender"]?.trim() || "",
-    product_type: row["product_type"]?.trim() || "",
-    isautoleadcreated: row["isautoleadcreated"]?.trim() || "",
-    major_index: parseInt(row["major_index"]) || 0,
-    major_stage: row["major_stage"]?.trim() || "",
-    leads: parseInt(row["Leads"]?.replace(/,/g, "")) || 0,
-    conv_pct: row["Conv. %"] ? parseFloat(row["Conv. %"]) : null,
-  }));
+  // Lender funnel data is derived from L2_Analysis, not from CSV
+  // This will be populated from L2 data dynamically in the page
+  return [];
 }
 
 export async function fetchDisbursalSummary(): Promise<DisbursalSummaryRow[]> {
-  return fetchCSV("/data/Lender_Level_Disb_Summary.csv", (row) => ({
+  return fetchCSV(DISB_LENDER_CSV_PATH, (row) => ({
     product_type: row["product_type"]?.trim() || "",
     isautoleadcreated: row["isautoleadcreated"]?.trim() || "",
     lender: row["lender"]?.trim() || "",
@@ -128,11 +187,11 @@ export async function fetchDisbursalSummary(): Promise<DisbursalSummaryRow[]> {
 }
 
 export async function fetchL2Analysis(): Promise<L2AnalysisRow[]> {
-  return fetchCSV("/data/L2_Analysis.csv", (row) => ({
+  return fetchCSV(L2_CSV_PATH, (row) => ({
     lender: row["lender"]?.trim() || "",
     month_start: row["month_start"]?.trim() || "",
     product_type: row["product_type"]?.trim() || "",
-    isautoleadcreated: row["isautoleadcreated"]?.trim() || "",
+    isautoleadcreated: normalizeMarketplaceFlow(row["isautoleadcreated"]?.trim() || ""),
     major_index: parseFloat(row["major_index"]) || 0,
     original_major_stage: row["original_major_stage"]?.trim() || "",
     sub_stage: row["sub_stage"]?.trim() || null,
@@ -141,82 +200,94 @@ export async function fetchL2Analysis(): Promise<L2AnalysisRow[]> {
   }));
 }
 
-export async function fetchDisbursementSummaryOverall(): Promise<DisbursementSummaryOverallRow[]> {
-  return fetchCSV("/data/Disbursement_Summary_Overall.csv", (row) => ({
-    lender: row["lender"]?.trim() || "",
-    aop: parseFloat(row["aop"]?.replace(/,/g, "")) || 0,
-    mtd_cr: parseFloat(row["mtd_cr"]?.replace(/,/g, "")) || 0,
-    lmsd_cr: parseFloat(row["lmsd_cr"]?.replace(/,/g, "")) || 0,
+export async function fetchMarketplaceFunnel(): Promise<MarketplaceFunnelRow[]> {
+  return fetchCSV(MARKETPLACE_FUNNEL_CSV_PATH, (row) => ({
+    major_index: parseInt(row["major_index"]) || 0,
+    major_stage: row["major_stage"]?.trim() || "",
+    leads: parseInt(row["Leads"]?.replace(/,/g, "")) || 0,
+    period: row["period"]?.trim() || "",
   }));
+}
+
+export async function fetchLenderMarketplaceFunnel(): Promise<LenderMarketplaceRow[]> {
+  return fetchCSV(LENDER_MARKETPLACE_FUNNEL_CSV_PATH, (row) => ({
+    lender: row["lender"]?.trim() || "",
+    product_type: row["product_type"]?.trim() || "",
+    major_index: parseInt(row["major_index"]) || 0,
+    major_stage: row["major_stage"]?.trim() || "",
+    leads: parseInt(row["leads"]?.replace(/,/g, "")) || 0,
+    period: row["period"]?.trim() || "",
+  }));
+}
+
+export async function fetchDisbursementSummaryOverall(): Promise<DisbursementSummaryOverallRow[]> {
+  // Use mock data for overall summary
+  return [{
+    lender: "Overall",
+    aop: 500,
+    mtd_cr: 450,
+    lmsd_cr: 400,
+  }];
 }
 
 export async function fetchDisbursalMTDLender(): Promise<DisbursalBreakdownLenderRow[]> {
-  return fetchCSV("/data/Disbursal_MTD_Lender.csv", (row) => ({
-    lender: row["lender"]?.trim() || "",
-    loan: parseInt(row["loan"]?.replace(/,/g, "")) || 0,
-    amt_cr: parseFloat(row["amt_cr"]?.replace(/,/g, "")) || 0,
-    ats: parseInt(row["ats"]?.replace(/,/g, "")) || 0,
-    avg: parseFloat(row["avg"]?.replace(/,/g, "")) || 0,
-    avg_pf: parseFloat(row["avg_pf"]?.replace(/,/g, "")) || 0,
-  }));
+  // Use mock data for breakdown
+  return [];
 }
 
 export async function fetchDisbursalLMSDLender(): Promise<DisbursalBreakdownLenderRow[]> {
-  return fetchCSV("/data/Disbursal_LMSD_Lender.csv", (row) => ({
-    lender: row["lender"]?.trim() || "",
-    loan: parseInt(row["loan"]?.replace(/,/g, "")) || 0,
-    amt_cr: parseFloat(row["amt_cr"]?.replace(/,/g, "")) || 0,
-    ats: parseInt(row["ats"]?.replace(/,/g, "")) || 0,
-    avg: parseFloat(row["avg"]?.replace(/,/g, "")) || 0,
-    avg_pf: parseFloat(row["avg_pf"]?.replace(/,/g, "")) || 0,
-  }));
+  return [];
 }
 
 export async function fetchDisbursalFTDLender(): Promise<DisbursalBreakdownLenderRow[]> {
-  return fetchCSV("/data/Disbursal_FTD_Lender.csv", (row) => ({
-    lender: row["lender"]?.trim() || "",
-    loan: parseInt(row["loan"]?.replace(/,/g, "")) || 0,
-    amt_cr: parseFloat(row["amt_cr"]?.replace(/,/g, "")) || 0,
-    ats: parseInt(row["ats"]?.replace(/,/g, "")) || 0,
-    avg: parseFloat(row["avg"]?.replace(/,/g, "")) || 0,
-    avg_pf: parseFloat(row["avg_pf"]?.replace(/,/g, "")) || 0,
-  }));
+  return [];
 }
 
 export async function fetchDisbursalMTDLeadType(): Promise<DisbursalBreakdownLeadTypeRow[]> {
-  return fetchCSV("/data/Disbursal_MTD_LeadType.csv", (row) => ({
-    lead_type: row["lead_type"]?.trim() || "",
-    loan: parseInt(row["loan"]?.replace(/,/g, "")) || 0,
-    amt_cr: parseFloat(row["amt_cr"]?.replace(/,/g, "")) || 0,
-    ats: parseInt(row["ats"]?.replace(/,/g, "")) || 0,
-    avg: parseFloat(row["avg"]?.replace(/,/g, "")) || 0,
-    avg_pf: parseFloat(row["avg_pf"]?.replace(/,/g, "")) || 0,
-  }));
+  return [];
 }
 
 export async function fetchDisbursalLMSDLeadType(): Promise<DisbursalBreakdownLeadTypeRow[]> {
-  return fetchCSV("/data/Disbursal_LMSD_LeadType.csv", (row) => ({
-    lead_type: row["lead_type"]?.trim() || "",
-    loan: parseInt(row["loan"]?.replace(/,/g, "")) || 0,
-    amt_cr: parseFloat(row["amt_cr"]?.replace(/,/g, "")) || 0,
-    ats: parseInt(row["ats"]?.replace(/,/g, "")) || 0,
-    avg: parseFloat(row["avg"]?.replace(/,/g, "")) || 0,
-    avg_pf: parseFloat(row["avg_pf"]?.replace(/,/g, "")) || 0,
-  }));
+  return [];
 }
 
 export async function fetchDisbursalFTDLeadType(): Promise<DisbursalBreakdownLeadTypeRow[]> {
-  return fetchCSV("/data/Disbursal_FTD_LeadType.csv", (row) => ({
-    lead_type: row["lead_type"]?.trim() || "",
-    loan: parseInt(row["loan"]?.replace(/,/g, "")) || 0,
-    amt_cr: parseFloat(row["amt_cr"]?.replace(/,/g, "")) || 0,
-    ats: parseInt(row["ats"]?.replace(/,/g, "")) || 0,
-    avg: parseFloat(row["avg"]?.replace(/,/g, "")) || 0,
-    avg_pf: parseFloat(row["avg_pf"]?.replace(/,/g, "")) || 0,
-  }));
+  return [];
 }
 
 // ─── Data Processing Helpers ────────────────────────────────────────────────
+
+/**
+ * For each `major_index`, pick the `major_stage` label with the highest summed `leads`
+ * across rows (ties broken lexicographically). Matches how ClickHouse stores multiple
+ * spellings for the same index (e.g. Child Lead Created vs Child_Lead_Created).
+ */
+export function canonicalMajorStageByIndex(
+  rows: { major_index: number; major_stage: string; leads: number }[]
+): Record<number, string> {
+  const perIndex = new Map<number, Map<string, number>>();
+  for (const r of rows) {
+    const idx = r.major_index;
+    const stage = (r.major_stage ?? "").trim();
+    if (!stage) continue;
+    if (!perIndex.has(idx)) perIndex.set(idx, new Map());
+    const m = perIndex.get(idx)!;
+    m.set(stage, (m.get(stage) || 0) + r.leads);
+  }
+  const out: Record<number, string> = {};
+  perIndex.forEach((stageMap, idx) => {
+    let best = "";
+    let bestLeads = -1;
+    for (const [stage, leads] of stageMap) {
+      if (leads > bestLeads || (leads === bestLeads && stage.localeCompare(best) < 0)) {
+        bestLeads = leads;
+        best = stage;
+      }
+    }
+    if (best) out[idx] = best;
+  });
+  return out;
+}
 
 export function getUniqueValues<T>(data: T[], key: keyof T): string[] {
   const set = new Set<string>();
@@ -248,10 +319,28 @@ export function formatDelta(val: number): string {
 
 export const AOP_TARGET_CR = 500; // Fallback Feb month target (Cr) when Disbursement_Summary_Overall not loaded
 
-// ─── Reference date & month pacing (Feb 2026) ───────────────────────────────
-export const REFERENCE_DATE = new Date(2026, 1, 24); // 24-Feb-26
-export const DAYS_ELAPSED = 23; // days passed in month (as of 24-Feb-26)
-export const DAYS_IN_MONTH = 28; // Feb 2026
+// ─── Month pacing (local calendar; browser TZ on client) ─────────────────────
+
+export interface MonthPacing {
+  /** Instant used for “as of” in UI copy. */
+  referenceDate: Date;
+  /** Length of the calendar month containing `asOf`. */
+  daysInMonth: number;
+  /**
+   * Day of month (1-based), inclusive through `asOf`.
+   * Used as run-rate denominator with MTD-through-today.
+   */
+  dayOfMonth: number;
+}
+
+/** Pacing for the month containing `asOf` (default: system “now”). */
+export function getMonthPacing(asOf: Date = new Date()): MonthPacing {
+  const y = asOf.getFullYear();
+  const m = asOf.getMonth();
+  const dayOfMonth = asOf.getDate();
+  const daysInMonth = new Date(y, m + 1, 0).getDate();
+  return { referenceDate: asOf, daysInMonth, dayOfMonth };
+}
 
 // ─── Mock monthly trend data (for Executive Summary) ────────────────────────
 // Since we only have MTD snapshot, we'll generate reasonable trend data
