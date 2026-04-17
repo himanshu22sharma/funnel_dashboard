@@ -3,15 +3,23 @@
  * Tuned for dashboard types: L2AnalysisRow, DisbursalSummaryRow.
  */
 
-/** Calendar windows for disbursal summary, FTD, and funnel MTD/LMTD (browser local date). */
+/**
+ * Calendar windows for disbursal summary, FTD, and funnel MTD/LMTD (browser local date).
+ *
+ * **MTD:** first day of the month containing `asOf` → **through `asOf`’s calendar date** (today when `asOf` is “now”).
+ *
+ * **LMTD (parallel prior month):** first day of the **previous** calendar month → the **same day-of-month**
+ * as `asOf` in that month, **capped** to that month’s length (28 / 30 / 31). Example: if `asOf` is 15 Apr,
+ * LMTD is 1 Mar–15 Mar; if `asOf` is 15 May, LMTD is 1 Apr–15 Apr; if `asOf` is 31 Mar, LMTD is 1 Feb–28 Feb.
+ */
 export interface DisbursalSqlCalendarWindow {
   /** First day of month containing `asOf` (YYYY-MM-DD). */
   mtdStart: string;
-  /** Same calendar day as `asOf` — MTD includes “today”. */
+  /** `asOf`’s calendar date — MTD **includes today** when `asOf` is current. */
   mtdEnd: string;
-  /** First day of prior month. */
+  /** First day of the **prior** calendar month (e.g. 1 Mar when `asOf` is in April). */
   lmtdStart: string;
-  /** Same day-of-month as `asOf`, capped by prior month length (parallel LMTD). */
+  /** Parallel “today” in the prior month, capped to 28/30/31 (e.g. 15 Mar when `asOf` is 15 Apr). */
   lmtdEnd: string;
   /** FTD = activations on this calendar day (same as `mtdEnd` when `asOf` is end-of-day “today”). */
   ftdDate: string;
@@ -24,8 +32,8 @@ function ymdFromParts(year: number, monthIndex0: number, day: number): string {
 }
 
 /**
- * MTD: month start → `asOf` (inclusive). LMTD: same span in the previous calendar month.
- * FTD: `asOf` calendar day only (typically today when callers pass `new Date()`).
+ * MTD: month start → **`asOf`’s date** (inclusive). LMTD: **1st of prior month** → same DOM in that month,
+ * capped to 28/30/31. FTD: `asOf`’s calendar day only.
  */
 export function getDisbursalCalendarWindows(asOf: Date = new Date()): DisbursalSqlCalendarWindow {
   const y = asOf.getFullYear();
@@ -38,10 +46,10 @@ export function getDisbursalCalendarWindows(asOf: Date = new Date()): DisbursalS
   const lastDayPrevMonth = new Date(y, m, 0);
   const py = lastDayPrevMonth.getFullYear();
   const pm = lastDayPrevMonth.getMonth();
-  const daysInPrev = lastDayPrevMonth.getDate();
-  const lmtdEndDay = Math.min(dom, daysInPrev);
+  const daysInPrevMonth = lastDayPrevMonth.getDate();
+  const lmtdParallelDay = Math.min(dom, daysInPrevMonth);
   const lmtdStart = ymdFromParts(py, pm, 1);
-  const lmtdEnd = ymdFromParts(py, pm, lmtdEndDay);
+  const lmtdEnd = ymdFromParts(py, pm, lmtdParallelDay);
 
   return { mtdStart, mtdEnd, lmtdStart, lmtdEnd, ftdDate: mtdEnd };
 }
