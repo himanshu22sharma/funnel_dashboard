@@ -3,88 +3,7 @@
  * Tuned for dashboard types: L2AnalysisRow, DisbursalSummaryRow.
  */
 
-/** `lead_created_at` windows for L2 + lender marketplace heatmap (inclusive). Disbursal uses same MTD/LMTD dates. */
-export const FUNNEL_MTD_START = "2026-04-01";
-export const FUNNEL_MTD_END = "2026-04-14";
-export const FUNNEL_LMTD_START = "2026-03-01";
-export const FUNNEL_LMTD_END = "2026-03-14";
-
-/**
- * L1 aggregate funnel (`MARKETPLACE_FUNNEL_SQL`): filter on `parent_created_dt` (not `lead_created_at`).
- * Inclusive MTD/LMTD windows (1–13 Apr / 1–13 Mar) for like-for-like vs prior period.
- */
-export const FUNNEL_L1_MTD_START = "2026-04-01";
-export const FUNNEL_L1_MTD_END = "2026-04-13";
-export const FUNNEL_L1_LMTD_START = "2026-03-01";
-export const FUNNEL_L1_LMTD_END = "2026-03-13";
-
-/**
- * L2 / sub-stage grain for funnel-summary + ch-sync: marketplace OLAP only.
- * Matches product logic: distinct parent leads, TERM_LOAN Fresh REGULAR, same MTD/LMTD
- * calendar windows on `lead_created_at` as {@link FUNNEL_MTD_START}–{@link FUNNEL_LMTD_END}.
- * Flow: when `ml_marketplace_olap` has `isautoleadcreated`, add it to the inner SELECT + GROUP BY
- * (see git history). Otherwise keep `'' AS isautoleadcreated` or ClickHouse / Lending CC may return HTTP 500.
- * Client still maps raw values via `normalizeMarketplaceFlow` when the column is present.
- */
-export const L2_ANALYSIS_SQL = `
-SELECT
-  month_start,
-  lender,
-  product_type,
-  isautoleadcreated,
-  major_index,
-  original_major_stage,
-  sub_stage,
-  leads,
-  stuck_pct
-FROM (
-  SELECT
-    '1.MTD' AS month_start,
-    lender,
-    product_type,
-    '' AS isautoleadcreated,
-    major_index,
-    major_stage AS original_major_stage,
-    ifNull(sub_stage, '') AS sub_stage,
-    count(distinct LRE_PARENT_LEAD) AS leads,
-    CAST(NULL AS Nullable(Float64)) AS stuck_pct
-  FROM control_center.ml_marketplace_olap
-  WHERE major_index >= 2 AND major_index <= 15
-    AND product_type = 'Fresh'
-    AND isdynamicwhitelist = 'False'
-    AND brp_flag = 'REGULAR'
-    AND product_scheme = 'TERM_LOAN'
-    AND toDate(lead_created_at) >= toDate('${FUNNEL_MTD_START}')
-    AND toDate(lead_created_at) <= toDate('${FUNNEL_MTD_END}')
-    AND is_active = 1
-  GROUP BY lender, product_type, major_index, major_stage, sub_stage
-
-  UNION ALL
-
-  SELECT
-    '2.LMTD' AS month_start,
-    lender,
-    product_type,
-    '' AS isautoleadcreated,
-    major_index,
-    major_stage AS original_major_stage,
-    ifNull(sub_stage, '') AS sub_stage,
-    count(distinct LRE_PARENT_LEAD) AS leads,
-    CAST(NULL AS Nullable(Float64)) AS stuck_pct
-  FROM control_center.ml_marketplace_olap
-  WHERE major_index >= 2 AND major_index <= 15
-    AND product_type = 'Fresh'
-    AND isdynamicwhitelist = 'False'
-    AND brp_flag = 'REGULAR'
-    AND product_scheme = 'TERM_LOAN'
-    AND toDate(lead_created_at) >= toDate('${FUNNEL_LMTD_START}')
-    AND toDate(lead_created_at) <= toDate('${FUNNEL_LMTD_END}')
-    AND is_active = 1
-  GROUP BY lender, product_type, major_index, major_stage, sub_stage
-)
-`.trim();
-
-/** Calendar windows for disbursal summary + FTD (browser local date; pass `asOf` from tests or jobs). */
+/** Calendar windows for disbursal summary, FTD, and funnel MTD/LMTD (browser local date). */
 export interface DisbursalSqlCalendarWindow {
   /** First day of month containing `asOf` (YYYY-MM-DD). */
   mtdStart: string;
@@ -125,6 +44,73 @@ export function getDisbursalCalendarWindows(asOf: Date = new Date()): DisbursalS
   const lmtdEnd = ymdFromParts(py, pm, lmtdEndDay);
 
   return { mtdStart, mtdEnd, lmtdStart, lmtdEnd, ftdDate: mtdEnd };
+}
+
+/** Alias: funnel L1/L2 + heatmap use the same MTD/LMTD windows as disbursal. */
+export const getFunnelCalendarWindows = getDisbursalCalendarWindows;
+
+/**
+ * L2 / sub-stage grain for funnel-summary + ch-sync: marketplace OLAP only.
+ * `lead_created_at` filtered by {@link getDisbursalCalendarWindows} (MTD includes query day).
+ */
+export function buildL2AnalysisSql(w: DisbursalSqlCalendarWindow): string {
+  return `
+SELECT
+  month_start,
+  lender,
+  product_type,
+  isautoleadcreated,
+  major_index,
+  original_major_stage,
+  sub_stage,
+  leads,
+  stuck_pct
+FROM (
+  SELECT
+    '1.MTD' AS month_start,
+    lender,
+    product_type,
+    '' AS isautoleadcreated,
+    major_index,
+    major_stage AS original_major_stage,
+    ifNull(sub_stage, '') AS sub_stage,
+    count(distinct LRE_PARENT_LEAD) AS leads,
+    CAST(NULL AS Nullable(Float64)) AS stuck_pct
+  FROM control_center.ml_marketplace_olap
+  WHERE major_index >= 2 AND major_index <= 15
+    AND product_type = 'Fresh'
+    AND isdynamicwhitelist = 'False'
+    AND brp_flag = 'REGULAR'
+    AND product_scheme = 'TERM_LOAN'
+    AND toDate(lead_created_at) >= toDate('${w.mtdStart}')
+    AND toDate(lead_created_at) <= toDate('${w.mtdEnd}')
+    AND is_active = 1
+  GROUP BY lender, product_type, major_index, major_stage, sub_stage
+
+  UNION ALL
+
+  SELECT
+    '2.LMTD' AS month_start,
+    lender,
+    product_type,
+    '' AS isautoleadcreated,
+    major_index,
+    major_stage AS original_major_stage,
+    ifNull(sub_stage, '') AS sub_stage,
+    count(distinct LRE_PARENT_LEAD) AS leads,
+    CAST(NULL AS Nullable(Float64)) AS stuck_pct
+  FROM control_center.ml_marketplace_olap
+  WHERE major_index >= 2 AND major_index <= 15
+    AND product_type = 'Fresh'
+    AND isdynamicwhitelist = 'False'
+    AND brp_flag = 'REGULAR'
+    AND product_scheme = 'TERM_LOAN'
+    AND toDate(lead_created_at) >= toDate('${w.lmtdStart}')
+    AND toDate(lead_created_at) <= toDate('${w.lmtdEnd}')
+    AND is_active = 1
+  GROUP BY lender, product_type, major_index, major_stage, sub_stage
+)
+`.trim();
 }
 
 /**
@@ -216,8 +202,9 @@ ORDER BY 2 DESC
 `.trim();
 }
 
-/** L1 marketplace funnel (major stages): `parent_created_dt` + {@link FUNNEL_L1_MTD_*}. */
-export const MARKETPLACE_FUNNEL_SQL = `
+/** L1 marketplace funnel (major stages): `parent_created_dt`, same MTD/LMTD calendar as L2. */
+export function buildMarketplaceFunnelSql(w: DisbursalSqlCalendarWindow): string {
+  return `
 SELECT
   major_index,
   major_stage,
@@ -228,8 +215,8 @@ WHERE product_scheme = 'TERM_LOAN'
   AND product_type = 'Fresh'
   AND isdynamicwhitelist = 'False'
   AND brp_flag = 'REGULAR'
-  AND toDate(parent_created_dt) >= toDate('${FUNNEL_L1_MTD_START}')
-  AND toDate(parent_created_dt) <= toDate('${FUNNEL_L1_MTD_END}')
+  AND toDate(parent_created_dt) >= toDate('${w.mtdStart}')
+  AND toDate(parent_created_dt) <= toDate('${w.mtdEnd}')
   AND major_index BETWEEN 2 AND 15
 GROUP BY major_index, major_stage
 
@@ -245,14 +232,16 @@ WHERE product_scheme = 'TERM_LOAN'
   AND product_type = 'Fresh'
   AND isdynamicwhitelist = 'False'
   AND brp_flag = 'REGULAR'
-  AND toDate(parent_created_dt) >= toDate('${FUNNEL_L1_LMTD_START}')
-  AND toDate(parent_created_dt) <= toDate('${FUNNEL_L1_LMTD_END}')
+  AND toDate(parent_created_dt) >= toDate('${w.lmtdStart}')
+  AND toDate(parent_created_dt) <= toDate('${w.lmtdEnd}')
   AND major_index BETWEEN 2 AND 15
 GROUP BY major_index, major_stage
 `.trim();
+}
 
-/** Lender-level marketplace funnel for heatmap: TERM_LOAN, Fresh, by Lender */
-export const LENDER_MARKETPLACE_FUNNEL_SQL = `
+/** Lender-level marketplace funnel for heatmap: `lead_created_at`, same MTD/LMTD as L2. */
+export function buildLenderMarketplaceFunnelSql(w: DisbursalSqlCalendarWindow): string {
+  return `
 SELECT
   lender,
   product_type,
@@ -265,8 +254,8 @@ WHERE product_scheme = 'TERM_LOAN'
   AND product_type = 'Fresh'
   AND isdynamicwhitelist = 'False'
   AND brp_flag = 'REGULAR'
-  AND toDate(lead_created_at) >= toDate('${FUNNEL_MTD_START}')
-  AND toDate(lead_created_at) <= toDate('${FUNNEL_MTD_END}')
+  AND toDate(lead_created_at) >= toDate('${w.mtdStart}')
+  AND toDate(lead_created_at) <= toDate('${w.mtdEnd}')
   AND major_index BETWEEN 6 AND 15
 GROUP BY lender, product_type, major_index, major_stage
 
@@ -284,8 +273,9 @@ WHERE product_scheme = 'TERM_LOAN'
   AND product_type = 'Fresh'
   AND isdynamicwhitelist = 'False'
   AND brp_flag = 'REGULAR'
-  AND toDate(lead_created_at) >= toDate('${FUNNEL_LMTD_START}')
-  AND toDate(lead_created_at) <= toDate('${FUNNEL_LMTD_END}')
+  AND toDate(lead_created_at) >= toDate('${w.lmtdStart}')
+  AND toDate(lead_created_at) <= toDate('${w.lmtdEnd}')
   AND major_index BETWEEN 6 AND 15
 GROUP BY lender, product_type, major_index, major_stage
 `.trim();
+}

@@ -12,7 +12,7 @@ export function buildLendingCcNonJsonError(status: number, rawBody: string): str
       `Lending CC returned HTTP ${status} with a non-JSON body (often a plain “Internal Server Error” or HTML page).`,
       title ? `Server title: ${title}.` : `Snippet: ${snippet}.`,
       "This almost always means ClickHouse rejected a query (e.g. unknown column) or Lending CC crashed — check Lending CC / ClickHouse logs.",
-      "If funnel-summary broke after an L2 SQL change, confirm `ml_marketplace_olap` exposes every column used in `L2_ANALYSIS_SQL` (including `isautoleadcreated` when you enable flow split in SQL).",
+      "If funnel-summary broke after an L2 SQL change, confirm `ml_marketplace_olap` exposes every column used in `buildL2AnalysisSql` / L2 query (including `isautoleadcreated` when you enable flow split in SQL).",
     ].join(" ");
   }
 

@@ -16,10 +16,10 @@ import { fileURLToPath } from "url";
 import { lendingCCPostQuery, rowsToObjects } from "../src/lib/lending-cc-server";
 import {
   buildDisbursalSummarySql,
+  buildL2AnalysisSql,
+  buildLenderMarketplaceFunnelSql,
+  buildMarketplaceFunnelSql,
   getDisbursalCalendarWindows,
-  L2_ANALYSIS_SQL,
-  LENDER_MARKETPLACE_FUNNEL_SQL,
-  MARKETPLACE_FUNNEL_SQL,
 } from "../src/lib/lending-cc-sql";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -62,7 +62,8 @@ async function main(): Promise<void> {
   const outDir = join(ROOT, "public", "data", "ch-sync");
   mkdirSync(outDir, { recursive: true });
 
-  const l2Res = await lendingCCPostQuery(L2_ANALYSIS_SQL);
+  const w = getDisbursalCalendarWindows();
+  const l2Res = await lendingCCPostQuery(buildL2AnalysisSql(w));
   const l2Objs = rowsToObjects(l2Res.columns, l2Res.rows);
   const l2CsvRows: Record<string, string>[] = l2Objs.map((o) => ({
     lender: String(o.lender ?? ""),
@@ -88,7 +89,7 @@ async function main(): Promise<void> {
   ];
   writeFileSync(join(outDir, "L2_Analysis.csv"), rowsToCsv(l2Headers, l2CsvRows), "utf8");
 
-  const disRes = await lendingCCPostQuery(buildDisbursalSummarySql(getDisbursalCalendarWindows()));
+  const disRes = await lendingCCPostQuery(buildDisbursalSummarySql(w));
   const disObjs = rowsToObjects(disRes.columns, disRes.rows);
   const disCsvRows: Record<string, string>[] = disObjs.map((o) => {
     const child = Number(o.child_leads) || 0;
@@ -121,7 +122,7 @@ async function main(): Promise<void> {
   writeFileSync(join(outDir, "Lender_Level_Disb_Summary.csv"), rowsToCsv(disHeaders, disCsvRows), "utf8");
 
   // Marketplace funnel
-  const mktRes = await lendingCCPostQuery(MARKETPLACE_FUNNEL_SQL);
+  const mktRes = await lendingCCPostQuery(buildMarketplaceFunnelSql(w));
   const mktObjs = rowsToObjects(mktRes.columns, mktRes.rows);
   const mktCsvRows: Record<string, string>[] = mktObjs.map((o) => ({
     major_index: String(o.major_index ?? ""),
@@ -133,7 +134,7 @@ async function main(): Promise<void> {
   writeFileSync(join(outDir, "Marketplace_Funnel.csv"), rowsToCsv(mktHeaders, mktCsvRows), "utf8");
 
   // Lender-level marketplace funnel (for heatmap)
-  const lenderMktRes = await lendingCCPostQuery(LENDER_MARKETPLACE_FUNNEL_SQL);
+  const lenderMktRes = await lendingCCPostQuery(buildLenderMarketplaceFunnelSql(w));
   const lenderMktObjs = rowsToObjects(lenderMktRes.columns, lenderMktRes.rows);
   const lenderMktCsvRows: Record<string, string>[] = lenderMktObjs.map((o) => ({
     lender: String(o.lender ?? ""),

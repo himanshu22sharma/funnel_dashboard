@@ -1287,7 +1287,7 @@ export default function DisbursalSummary() {
     <div>
       <PageHeader
         title="Disbursal Summary"
-        description={`Where disbursements come from (${pL} vs ${cL}), who is performing, and whether we are on track. Day ${pacingDay}/${pacingDaysInMonth} (as of ${pacingAsOf.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "2-digit" })}).`}
+        description={`Where disbursements come from (${pL} vs ${cL}), who is performing, and whether we are on track. Day ${pacingDay}/${pacingDaysInMonth} (as of ${pacingAsOf.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "2-digit" })}). CH: MTD ${disbursalWindows.mtdStart}–${disbursalWindows.mtdEnd}, LMTD ${disbursalWindows.lmtdStart}–${disbursalWindows.lmtdEnd}.`}
       />
 
       <div className="p-6 space-y-6">

@@ -7,10 +7,10 @@ import {
   buildDisbursalFtdLeadTypeSql,
   buildDisbursalFtdLenderSql,
   buildDisbursalSummarySql,
+  buildL2AnalysisSql,
+  buildLenderMarketplaceFunnelSql,
+  buildMarketplaceFunnelSql,
   getDisbursalCalendarWindows,
-  L2_ANALYSIS_SQL,
-  LENDER_MARKETPLACE_FUNNEL_SQL,
-  MARKETPLACE_FUNNEL_SQL,
 } from "@/lib/lending-cc-sql";
 import {
   normalizeMarketplaceFlow,
@@ -177,13 +177,14 @@ export interface FunnelSummaryChPayload {
 }
 
 /** Core funnel payload (2 parallel queries) — use first for faster perceived load on funnel-summary. */
-export async function loadFunnelSummaryCoreChData(): Promise<{
+export async function loadFunnelSummaryCoreChData(asOf: Date = new Date()): Promise<{
   l2: L2AnalysisRow[];
   mkt: MarketplaceFunnelRow[];
 }> {
+  const w = getDisbursalCalendarWindows(asOf);
   const [l2Res, mktRes] = await Promise.all([
-    lendingCCClientPostQuery(L2_ANALYSIS_SQL),
-    lendingCCClientPostQuery(MARKETPLACE_FUNNEL_SQL),
+    lendingCCClientPostQuery(buildL2AnalysisSql(w)),
+    lendingCCClientPostQuery(buildMarketplaceFunnelSql(w)),
   ]);
   const l2 = rowsToObjects(l2Res.columns, l2Res.rows).map(mapL2QueryRow);
   const mkt = rowsToObjects(mktRes.columns, mktRes.rows).map(mapMarketplaceQueryRow);
@@ -191,13 +192,14 @@ export async function loadFunnelSummaryCoreChData(): Promise<{
 }
 
 /** Heatmap + disbursal (2 parallel queries). */
-export async function loadFunnelSummarySecondaryChData(): Promise<{
+export async function loadFunnelSummarySecondaryChData(asOf: Date = new Date()): Promise<{
   lenderMkt: LenderMarketplaceRow[];
   disb: DisbursalSummaryRow[];
 }> {
-  const disbursalSql = buildDisbursalSummarySql(getDisbursalCalendarWindows());
+  const w = getDisbursalCalendarWindows(asOf);
+  const disbursalSql = buildDisbursalSummarySql(w);
   const [lenderMktRes, disRes] = await Promise.all([
-    lendingCCClientPostQuery(LENDER_MARKETPLACE_FUNNEL_SQL),
+    lendingCCClientPostQuery(buildLenderMarketplaceFunnelSql(w)),
     lendingCCClientPostQuery(disbursalSql),
   ]);
   const lenderMkt = rowsToObjects(lenderMktRes.columns, lenderMktRes.rows).map(mapLenderMarketplaceQueryRow);
@@ -237,10 +239,10 @@ export async function loadDisbursalFtdChRows(asOf: Date = new Date()): Promise<{
   return { lenders, leadTypes, errors };
 }
 
-export async function loadFunnelSummaryClickhouseData(): Promise<FunnelSummaryChPayload> {
+export async function loadFunnelSummaryClickhouseData(asOf: Date = new Date()): Promise<FunnelSummaryChPayload> {
   const [core, secondary] = await Promise.all([
-    loadFunnelSummaryCoreChData(),
-    loadFunnelSummarySecondaryChData(),
+    loadFunnelSummaryCoreChData(asOf),
+    loadFunnelSummarySecondaryChData(asOf),
   ]);
   return { l2: core.l2, mkt: core.mkt, lenderMkt: secondary.lenderMkt, disb: secondary.disb };
 }

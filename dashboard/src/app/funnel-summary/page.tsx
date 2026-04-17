@@ -67,6 +67,7 @@ import { CommandPalette } from "@/components/dashboard/command-palette";
 import { RevenueLossBar } from "@/components/dashboard/revenue-loss-bar";
 import { useRouter } from "next/navigation";
 import { getLendingCCClientConfig } from "@/lib/lending-cc-client";
+import { getDisbursalCalendarWindows, type DisbursalSqlCalendarWindow } from "@/lib/lending-cc-sql";
 import {
   buildCompleteFunnelFromMarketplaceMtd,
   deriveLenderFunnelFromL2,
@@ -121,6 +122,10 @@ export default function FunnelSummary() {
   const [lenderMktFunnelData, setLenderMktFunnelData] = useState<LenderMarketplaceRow[]>([]);
   const [chBootstrapError, setChBootstrapError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  /** Same calendar window as ClickHouse funnel queries for this load (MTD includes today). */
+  const [funnelChWindows, setFunnelChWindows] = useState<DisbursalSqlCalendarWindow>(() =>
+    getDisbursalCalendarWindows(),
+  );
   const bootstrapLoadId = useRef(0);
 
   // Tab-level filters
@@ -162,6 +167,8 @@ export default function FunnelSummary() {
     const myLoadId = ++bootstrapLoadId.current;
     setLoading(true);
     setChBootstrapError(null);
+    const asOf = new Date();
+    setFunnelChWindows(getDisbursalCalendarWindows(asOf));
     const cfg = getLendingCCClientConfig();
     if (!cfg) {
       setChBootstrapError(
@@ -180,7 +187,7 @@ export default function FunnelSummary() {
       return;
     }
     try {
-      const core = await loadFunnelSummaryCoreChData();
+      const core = await loadFunnelSummaryCoreChData(asOf);
       if (myLoadId !== bootstrapLoadId.current) return;
       setL2Data(core.l2);
       setMktFunnelData(core.mkt);
@@ -192,7 +199,7 @@ export default function FunnelSummary() {
       if (myLoadId === bootstrapLoadId.current) setLoading(false);
 
       try {
-        const secondary = await loadFunnelSummarySecondaryChData();
+        const secondary = await loadFunnelSummarySecondaryChData(asOf);
         if (myLoadId !== bootstrapLoadId.current) return;
         setLenderMktFunnelData(secondary.lenderMkt);
         setDisbData(secondary.disb);
@@ -2150,7 +2157,7 @@ export default function FunnelSummary() {
       <GuidedTour />
       <PageHeader
         title={isLenderFiltered ? `Funnel — ${effectiveLender}` : "Funnel Summary"}
-        description={`${pL} vs ${cL}. Click a stage to open the Stage Deep Dive.`}
+        description={`${pL} vs ${cL} · CH: MTD ${funnelChWindows.mtdStart}–${funnelChWindows.mtdEnd}, LMTD ${funnelChWindows.lmtdStart}–${funnelChWindows.lmtdEnd} (local calendar). Click a stage to open the Stage Deep Dive.`}
       />
 
       <div className="p-6 space-y-6">
