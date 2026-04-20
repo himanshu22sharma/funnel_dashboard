@@ -19,6 +19,7 @@ import {
   MonthlyTrend,
   AOP_TARGET_CR,
   getMonthPacing,
+  formatMonthYearEn,
 } from "@/lib/data";
 import { Banknote, TrendingUp, TrendingDown, Target, DollarSign, AlertTriangle } from "lucide-react";
 
@@ -74,6 +75,7 @@ export default function ExecutiveSummary() {
   }, [hasLmsdAmt, hasAmtCr, filtered, totalAmountCr, lmtdDisbursed]);
 
   const { dayOfMonth, daysInMonth, referenceDate } = getMonthPacing();
+  const aopMonthLabel = formatMonthYearEn(referenceDate);
   const pace = daysInMonth > 0 ? dayOfMonth / daysInMonth : 0;
   const projectedCr = pace > 0 ? parseFloat((totalAmountCr / pace).toFixed(2)) : 0;
   const totalAop = useMemo(() => {
@@ -82,7 +84,7 @@ export default function ExecutiveSummary() {
     const row = summaryOverall.find((r) => r.lender === effectiveLender);
     return row ? row.aop : AOP_TARGET_CR;
   }, [summaryOverall, effectiveLender]);
-  const monthlyAopCr = parseFloat((totalAop).toFixed(2)); // AOP = Feb'26 month target (Cr), not annual
+  const monthlyAopCr = parseFloat((totalAop).toFixed(2)); // AOP = current month target (Cr), not annual
 
   const mtdAts = useMemo(() => (totalDisbursed > 0 ? parseFloat(((totalAmountCr / totalDisbursed) * 100).toFixed(2)) : AVG_ATS), [totalDisbursed, totalAmountCr]);
   const lmtdAts = useMemo(() => (lmtdDisbursed > 0 ? parseFloat(((lmtdAmountCr / lmtdDisbursed) * 100).toFixed(2)) : mtdAts), [lmtdDisbursed, lmtdAmountCr, mtdAts]);
@@ -113,7 +115,7 @@ export default function ExecutiveSummary() {
         lmtd_amount_cr: useLmsdAmt ? parseFloat(v.lmtd_amt_cr.toFixed(2)) : parseFloat(((v.lmtd_disb * AVG_ATS) / 100).toFixed(2)),
         ats_lakhs: atsL,
         lmtd_ats_lakhs: lmtdAtsL,
-        aop_cr: summaryOverall.find((r) => r.lender === lender)?.aop ?? 0, // AOP = Feb'26 month target (Cr)
+        aop_cr: summaryOverall.find((r) => r.lender === lender)?.aop ?? 0, // AOP = current month target (Cr)
       };
     });
   }, [filtered, hasAmtCr, hasLmsdAmt, summaryOverall]);
@@ -159,11 +161,11 @@ export default function ExecutiveSummary() {
 
     const aopPct = monthlyAopCr > 0 ? (totalAmountCr / monthlyAopCr) * 100 : 0;
     if (aopPct >= 100) {
-      items.push({ id: nid(), icon: Target, color: "text-emerald-600", title: `On Track for AOP: ${aopPct.toFixed(0)}%`, detail: `₹${totalAmountCr.toFixed(1)} Cr achieved. Projected: ₹${projectedCr.toFixed(1)} Cr.`, severity: "good", impactWeight: 30, link: "/disbursal-summary", expanded: { bullets: [`Achieved: ₹${totalAmountCr.toFixed(1)} Cr`, `Feb'26 AOP: ₹${monthlyAopCr.toFixed(1)} Cr`, `Projected: ₹${projectedCr.toFixed(1)} Cr`], chartData: [], chartLabel: "", chartValueSuffix: "" } });
+      items.push({ id: nid(), icon: Target, color: "text-emerald-600", title: `On Track for AOP: ${aopPct.toFixed(0)}%`, detail: `₹${totalAmountCr.toFixed(1)} Cr achieved. Projected: ₹${projectedCr.toFixed(1)} Cr.`, severity: "good", impactWeight: 30, link: "/disbursal-summary", expanded: { bullets: [`Achieved: ₹${totalAmountCr.toFixed(1)} Cr`, `${aopMonthLabel} AOP: ₹${monthlyAopCr.toFixed(1)} Cr`, `Projected: ₹${projectedCr.toFixed(1)} Cr`], chartData: [], chartLabel: "", chartValueSuffix: "" } });
     } else if (aopPct >= 70) {
       items.push({ id: nid(), icon: Target, color: "text-amber-600", title: `Slightly Behind AOP: ${aopPct.toFixed(0)}%`, detail: `₹${totalAmountCr.toFixed(1)} Cr achieved vs ₹${monthlyAopCr.toFixed(1)} Cr AOP. Projected: ₹${projectedCr.toFixed(1)} Cr.`, severity: "warn", impactWeight: 55, link: "/disbursal-summary", expanded: { bullets: [`Gap: ~₹${(monthlyAopCr - totalAmountCr).toFixed(1)} Cr`, `Projected: ₹${projectedCr.toFixed(1)} Cr`], chartData: [], chartLabel: "", chartValueSuffix: "" } });
     } else {
-      items.push({ id: nid(), icon: Target, color: "text-red-600", title: `Behind AOP: ${aopPct.toFixed(0)}%`, detail: `Only ₹${totalAmountCr.toFixed(1)} Cr achieved (Feb'26 AOP: ₹${monthlyAopCr.toFixed(1)} Cr). Projected: ₹${projectedCr.toFixed(1)} Cr.`, severity: "bad", impactWeight: 85, link: "/disbursal-summary", expanded: { bullets: [`Gap: ~₹${(monthlyAopCr - totalAmountCr).toFixed(1)} Cr shortfall`, `Projected: ₹${projectedCr.toFixed(1)} Cr`], chartData: [], chartLabel: "", chartValueSuffix: "" } });
+      items.push({ id: nid(), icon: Target, color: "text-red-600", title: `Behind AOP: ${aopPct.toFixed(0)}%`, detail: `Only ₹${totalAmountCr.toFixed(1)} Cr achieved (${aopMonthLabel} AOP: ₹${monthlyAopCr.toFixed(1)} Cr). Projected: ₹${projectedCr.toFixed(1)} Cr.`, severity: "bad", impactWeight: 85, link: "/disbursal-summary", expanded: { bullets: [`Gap: ~₹${(monthlyAopCr - totalAmountCr).toFixed(1)} Cr shortfall`, `Projected: ₹${projectedCr.toFixed(1)} Cr`], chartData: [], chartLabel: "", chartValueSuffix: "" } });
     }
 
     const sorted = [...byLender].sort((a, b) => (b.disbursed_count || 0) - (a.disbursed_count || 0));
@@ -177,7 +179,7 @@ export default function ExecutiveSummary() {
     }
 
     return items;
-  }, [totalDisbursed, lmtdDisbursed, totalAmountCr, projectedCr, monthlyAopCr, byLender, pL, cL]);
+  }, [totalDisbursed, lmtdDisbursed, totalAmountCr, projectedCr, monthlyAopCr, byLender, pL, cL, aopMonthLabel]);
 
   const disbGrowth = lmtdDisbursed > 0 ? ((totalDisbursed - lmtdDisbursed) / lmtdDisbursed) * 100 : 0;
   const amtGrowth = lmtdAmountCr > 0 ? ((totalAmountCr - lmtdAmountCr) / lmtdAmountCr) * 100 : 0;
@@ -215,11 +217,11 @@ export default function ExecutiveSummary() {
         config = {
           title: "Projected",
           metric: `₹${projectedCr} Cr`,
-          subtitle: `Feb'26 AOP: ₹${monthlyAopCr} Cr · Day ${dayOfMonth}/${daysInMonth}`,
+          subtitle: `${aopMonthLabel} AOP: ₹${monthlyAopCr} Cr · Day ${dayOfMonth}/${daysInMonth}`,
           sections: [
-            { title: "Projection (at current run-rate)", type: "kpi-row", kpis: [{ label: "Projected month-end (Cr)", value: projectedCr.toFixed(1) }, { label: "Feb'26 AOP target (Cr)", value: monthlyAopCr.toFixed(1) }, { label: "Pacing", value: monthlyAopCr > 0 ? `${pacingPct.toFixed(0)}%` : "-" }] },
+            { title: "Projection (at current run-rate)", type: "kpi-row", kpis: [{ label: "Projected month-end (Cr)", value: projectedCr.toFixed(1) }, { label: `${aopMonthLabel} AOP target (Cr)`, value: monthlyAopCr.toFixed(1) }, { label: "Pacing", value: monthlyAopCr > 0 ? `${pacingPct.toFixed(0)}%` : "-" }] },
             { title: "By Lender (MTD amount)", type: "chart", chart: { type: "bar", data: sortedLender.slice(0, 8).map((l) => ({ name: l.label, value: l.amount_cr || 0 })), label: "MTD (Cr)", valueSuffix: " Cr" } },
-            { title: "Lender-wise: MTD vs Projected vs AOP", type: "table", headers: ["Lender", "MTD (Cr)", "Projected (Cr)", "Feb'26 AOP (Cr)", "Pacing %"], rows: sortedLender.slice(0, 12).map((l) => {
+            { title: "Lender-wise: MTD vs Projected vs AOP", type: "table", headers: ["Lender", "MTD (Cr)", "Projected (Cr)", `${aopMonthLabel} AOP (Cr)`, "Pacing %"], rows: sortedLender.slice(0, 12).map((l) => {
               const mtd = l.amount_cr || 0;
               const proj = pace > 0 ? mtd / pace : 0;
               const aop = l.aop_cr || 0;
@@ -258,7 +260,7 @@ export default function ExecutiveSummary() {
     <div>
       <PageHeader
         title="Executive Summary"
-        description={`High-level business snapshot · ${pL} vs ${cL} · Day ${dayOfMonth}/${daysInMonth} (as of ${referenceDate.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "2-digit" })})`}
+        description={`High-level business snapshot · ${pL} vs ${cL} · Day ${dayOfMonth}/${daysInMonth} (as of ${referenceDate.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "2-digit", timeZone: "UTC" })})`}
       />
 
       <div className="p-6 space-y-6">
@@ -288,7 +290,7 @@ export default function ExecutiveSummary() {
             <KPICard
               title="Projected"
               value={`₹${projectedCr} Cr`}
-              subtitle={`Feb'26 AOP: ₹${monthlyAopCr} Cr`}
+              subtitle={`${aopMonthLabel} AOP: ₹${monthlyAopCr} Cr`}
               delta={monthlyAopCr > 0 ? ((projectedCr - monthlyAopCr) / monthlyAopCr) * 100 : 0}
               deltaLabel="vs AOP"
               icon={<Target className="h-5 w-5 text-amber-500" />}

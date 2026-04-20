@@ -4,13 +4,18 @@
  */
 
 /**
- * Calendar windows for disbursal summary, FTD, and funnel MTD/LMTD (browser local date).
+ * Calendar windows for disbursal summary, FTD, and funnel MTD/LMTD.
  *
- * **MTD:** first day of the month containing `asOf` → **through `asOf`’s calendar date** (today when `asOf` is “now”).
+ * **Reporting timezone:** day boundaries follow {@link getReportTimeZone} (default **Asia/Kolkata**), not the
+ * browser’s local zone. That way MTD/LMTD ranges match India ops / ClickHouse reports even when the laptop is
+ * set to US/Europe (where “local today” can still be “yesterday” in IST).
  *
- * **LMTD (parallel prior month):** first day of the **previous** calendar month → the **same day-of-month**
- * as `asOf` in that month, **capped** to that month’s length (28 / 30 / 31). Example: if `asOf` is 15 Apr,
- * LMTD is 1 Mar–15 Mar; if `asOf` is 15 May, LMTD is 1 Apr–15 Apr; if `asOf` is 31 Mar, LMTD is 1 Feb–28 Feb.
+ * **MTD:** first day of the month containing the report-zone **calendar date** of `asOf` → through that same
+ * calendar date (inclusive).
+ *
+ * **LMTD (parallel prior month):** first day of the **previous** calendar month (in that zone) → the **same
+ * day-of-month** as the anchor date, **capped** to that month’s length (28 / 30 / 31). Example: anchor 15 Apr
+ * (IST) → LMTD 1 Mar–15 Mar; anchor 31 Mar → LMTD 1 Feb–28 Feb.
  */
 export interface DisbursalSqlCalendarWindow {
   /** First day of month containing `asOf` (YYYY-MM-DD). */
@@ -32,18 +37,57 @@ function ymdFromParts(year: number, monthIndex0: number, day: number): string {
 }
 
 /**
- * MTD: month start → **`asOf`’s date** (inclusive). LMTD: **1st of prior month** → same DOM in that month,
- * capped to 28/30/31. FTD: `asOf`’s calendar day only.
+ * IANA timezone used for MTD/LMTD/FTD calendar math. Override with `REPORT_TIME_ZONE` or
+ * `NEXT_PUBLIC_REPORT_TIME_ZONE` (e.g. `Asia/Kolkata`). Invalid values fall back to Asia/Kolkata.
+ */
+export function getReportTimeZone(): string {
+  const raw =
+    (typeof process !== "undefined" &&
+      process.env &&
+      (process.env.NEXT_PUBLIC_REPORT_TIME_ZONE || process.env.REPORT_TIME_ZONE)) ||
+    "";
+  const z = String(raw).trim();
+  if (!z) return "Asia/Kolkata";
+  try {
+    Intl.DateTimeFormat(undefined, { timeZone: z });
+    return z;
+  } catch {
+    return "Asia/Kolkata";
+  }
+}
+
+/** Calendar y / zero-based month / day-of-month for `d` in `timeZone` (Gregorian). */
+export function getCalendarPartsInTimeZone(d: Date, timeZone: string): { y: number; m0: number; dom: number } {
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+  });
+  const parts = fmt.formatToParts(d);
+  let y = 0;
+  let mo = 1;
+  let dom = 1;
+  for (const p of parts) {
+    if (p.type === "year") y = parseInt(p.value, 10);
+    else if (p.type === "month") mo = parseInt(p.value, 10);
+    else if (p.type === "day") dom = parseInt(p.value, 10);
+  }
+  return { y, m0: mo - 1, dom };
+}
+
+/**
+ * MTD: month start → anchor calendar date in the report zone (inclusive). LMTD: 1st of prior month → same DOM,
+ * capped. FTD: that same calendar day (`mtdEnd`).
  */
 export function getDisbursalCalendarWindows(asOf: Date = new Date()): DisbursalSqlCalendarWindow {
-  const y = asOf.getFullYear();
-  const m = asOf.getMonth();
-  const dom = asOf.getDate();
+  const tz = getReportTimeZone();
+  const { y, m0, dom } = getCalendarPartsInTimeZone(asOf, tz);
 
-  const mtdStart = ymdFromParts(y, m, 1);
-  const mtdEnd = ymdFromParts(y, m, dom);
+  const mtdStart = ymdFromParts(y, m0, 1);
+  const mtdEnd = ymdFromParts(y, m0, dom);
 
-  const lastDayPrevMonth = new Date(y, m, 0);
+  const lastDayPrevMonth = new Date(y, m0, 0);
   const py = lastDayPrevMonth.getFullYear();
   const pm = lastDayPrevMonth.getMonth();
   const daysInPrevMonth = lastDayPrevMonth.getDate();

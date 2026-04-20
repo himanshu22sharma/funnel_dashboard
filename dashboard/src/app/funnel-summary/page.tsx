@@ -67,7 +67,11 @@ import { CommandPalette } from "@/components/dashboard/command-palette";
 import { RevenueLossBar } from "@/components/dashboard/revenue-loss-bar";
 import { useRouter } from "next/navigation";
 import { getLendingCCClientConfig } from "@/lib/lending-cc-client";
-import { getDisbursalCalendarWindows, type DisbursalSqlCalendarWindow } from "@/lib/lending-cc-sql";
+import {
+  getDisbursalCalendarWindows,
+  getReportTimeZone,
+  type DisbursalSqlCalendarWindow,
+} from "@/lib/lending-cc-sql";
 import {
   buildCompleteFunnelFromMarketplaceMtd,
   deriveLenderFunnelFromL2,
@@ -87,6 +91,7 @@ import {
   DisbursalSummaryRow,
   MarketplaceFunnelRow,
   LenderMarketplaceRow,
+  rollingSixMonthLabels,
 } from "@/lib/data";
 
 /** No L3 failure-reason breakdown from ClickHouse yet — empty map disables mock distributions. */
@@ -2114,14 +2119,19 @@ export default function FunnelSummary() {
   // Monthly trends for lender
   const lenderTrends = useMemo(() => {
     if (!isLenderFiltered || !lenderKPIs) return [];
-    const months = ["Sep 2025", "Oct 2025", "Nov 2025", "Dec 2025", "Jan 2026", "Feb 2026"];
+    const parts = funnelChWindows.mtdEnd.split("-").map((x) => parseInt(x, 10));
+    const trendAnchor =
+      parts.length === 3 && parts.every((n) => Number.isFinite(n))
+        ? new Date(parts[0], parts[1] - 1, parts[2])
+        : new Date();
+    const months = rollingSixMonthLabels(trendAnchor, "long");
     const factors = [0.72, 0.78, 0.85, 0.90, 0.95, 1.0];
     return months.map((month, i) => ({
       month,
       disbursed: Math.round(lenderKPIs!.totalDisb * factors[i]),
       amount_cr: parseFloat(((lenderKPIs!.totalDisb * factors[i] * AVG_ATS) / 100).toFixed(2)),
     }));
-  }, [isLenderFiltered, lenderKPIs, AVG_ATS]);
+  }, [isLenderFiltered, lenderKPIs, AVG_ATS, funnelChWindows.mtdEnd]);
 
   const [stageHintVisible, dismissStageHint] = useContextualHint("stage_click");
 
@@ -2157,7 +2167,7 @@ export default function FunnelSummary() {
       <GuidedTour />
       <PageHeader
         title={isLenderFiltered ? `Funnel — ${effectiveLender}` : "Funnel Summary"}
-        description={`${pL} vs ${cL} · CH: MTD ${funnelChWindows.mtdStart}–${funnelChWindows.mtdEnd}, LMTD ${funnelChWindows.lmtdStart}–${funnelChWindows.lmtdEnd} (local calendar). Click a stage to open the Stage Deep Dive.`}
+        description={`${pL} vs ${cL} · CH: MTD ${funnelChWindows.mtdStart}–${funnelChWindows.mtdEnd}, LMTD ${funnelChWindows.lmtdStart}–${funnelChWindows.lmtdEnd} (${getReportTimeZone()} calendar). Click a stage to open the Stage Deep Dive.`}
       />
 
       <div className="p-6 space-y-6">

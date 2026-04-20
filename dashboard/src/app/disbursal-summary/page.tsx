@@ -37,11 +37,17 @@ import {
   DisbursalBreakdownLenderRow,
   DisbursalBreakdownLeadTypeRow,
   getMonthPacing,
+  rollingSixMonthLabels,
+  formatMonthYearEn,
 } from "@/lib/data";
 import { cn } from "@/lib/utils";
 import { getLendingCCClientConfig } from "@/lib/lending-cc-client";
 import { loadDisbursalFtdChRows, loadDisbursalSummaryChRows } from "@/lib/ch-dashboard-mappers";
-import { getDisbursalCalendarWindows, type DisbursalSqlCalendarWindow } from "@/lib/lending-cc-sql";
+import {
+  getDisbursalCalendarWindows,
+  getReportTimeZone,
+  type DisbursalSqlCalendarWindow,
+} from "@/lib/lending-cc-sql";
 import {
   Banknote,
   Hash,
@@ -76,8 +82,8 @@ import {
 const AVG_ATS = 1.83;
 /** Used only when LMSD data is not available (avoid for amount – LMSD can be higher than MTD) */
 const LMTD_FACTOR = 0.94;
-// Fallback AOP (Feb'26 month target, Cr) when Disbursement_Summary_Overall.csv not loaded
-// AOP (Feb'26 month target, Cr) per screenshot: SMFG 1375, PIRAMAL 140, NACL 130, MFL 130, PAYU 115, SRIRAM 100, KSF 100, TCL 15, UCL 0. Total 2105.
+// Fallback AOP (month target, Cr) when Disbursement_Summary_Overall.csv not loaded
+// Example snapshot targets (Cr): SMFG 1375, PIRAMAL 140, NACL 130, MFL 130, PAYU 115, SRIRAM 100, KSF 100, TCL 15, UCL 0. Total 2105.
 const LENDER_AOP_FALLBACK: Record<string, number> = {
   SMFG: 1375, PIRAMAL: 140, Piramal: 140, NACL: 130, MFL: 130, PAYU: 115,
   SRIRAM: 100, KSF: 100, TCL: 15, UCL: 0,
@@ -108,7 +114,7 @@ interface RawMTDLMTDRow {
   lmtd_ats: number;
 }
 
-// Raw MTD (Feb'26) / LMTD (Jan'26) from MTD_LMTD_data.csv. FR split applied in expandWithFRSplit.
+// Raw MTD / LMTD from MTD_LMTD_data.csv. FR split applied in expandWithFRSplit.
 const RAW_MTD_LMTD_DATA: RawMTDLMTDRow[] = [
   { product_id: 88, lender: "SMFG", program: "Topup", policy: "", mtd_lead_count: 23231, mtd_loan_amount_cr: 784.79, mtd_ats: 337821, lmtd_lead_count: 26067, lmtd_loan_amount_cr: 870.80, lmtd_ats: 334061 },
   { product_id: 85, lender: "SMFG", program: "FR", policy: "", mtd_lead_count: 23145, mtd_loan_amount_cr: 381.37, mtd_ats: 164772, lmtd_lead_count: 22995, lmtd_loan_amount_cr: 401.42, lmtd_ats: 174570 },
@@ -346,6 +352,7 @@ export default function DisbursalSummary() {
 
   const pacing = getMonthPacing();
   const { dayOfMonth: pacingDay, daysInMonth: pacingDaysInMonth, referenceDate: pacingAsOf } = pacing;
+  const aopMonthLabel = formatMonthYearEn(pacingAsOf);
 
   useEffect(() => {
     async function load() {
@@ -552,7 +559,7 @@ export default function DisbursalSummary() {
   const convDelta = convPct - lmtdConv;
 
   const runRateCr = pacingDay > 0 ? (amountCr / pacingDay) * pacingDaysInMonth : 0;
-  const monthlyAopTarget = totalAop; // AOP = Feb'26 month target (Cr)
+  const monthlyAopTarget = totalAop; // AOP = current month target (Cr)
   const runRatePacingPct = monthlyAopTarget > 0 ? (runRateCr / monthlyAopTarget) * 100 : 0;
 
   // ─── By-Lender (from raw MTD/LMTD for page consistency) ───
@@ -678,7 +685,7 @@ export default function DisbursalSummary() {
 
   // Per-lender monthly trend (simulated)
   const lenderMonthlyTrends = useMemo(() => {
-    const months = ["Sep 25", "Oct 25", "Nov 25", "Dec 25", "Jan 26", "Feb 26"];
+    const months = rollingSixMonthLabels(pacingAsOf, "short");
     const factors = [0.72, 0.78, 0.85, 0.90, 0.95, 1.0];
 
     return months.map((month, mi) => {
@@ -688,7 +695,7 @@ export default function DisbursalSummary() {
       });
       return row;
     });
-  }, [byLender]);
+  }, [byLender, pacingAsOf]);
 
   // ─── SECTION 3: Contribution & Concentration ──────────────────────
   const concentrationData = useMemo(() => {
@@ -1158,7 +1165,7 @@ export default function DisbursalSummary() {
     const lenderPacing = byLender
       .filter((l) => l.aop > 0)
       .map((l) => {
-        const monthlyTarget = l.aop; // AOP = Feb'26 month target (Cr)
+        const monthlyTarget = l.aop; // AOP = current month target (Cr)
         const currentPace = pacingDay > 0 ? (l.amount_cr / pacingDay) * pacingDaysInMonth : 0;
         const pacingPct = monthlyTarget > 0 ? (currentPace / monthlyTarget) * 100 : 0;
         const daysToTarget =
@@ -1214,7 +1221,7 @@ export default function DisbursalSummary() {
       const gap = monthlyAopTarget - runRateCr;
       items.push({ id: nextId(), icon: Target, color: "text-red-600", title: `AOP Run-Rate Behind: ${runRatePacingPct.toFixed(0)}%`, detail: `₹${runRateCr.toFixed(1)} Cr/month run-rate vs ₹${monthlyAopTarget.toFixed(1)} Cr target. Gap: ~₹${gap.toFixed(1)} Cr.`, severity: "bad", impactWeight: 80, link: "/disbursal-summary", section: "disb-kpi", expanded: { bullets: [`Run-rate: ₹${runRateCr.toFixed(1)} Cr/month | Target: ₹${monthlyAopTarget.toFixed(1)} Cr`, `Pacing: ${runRatePacingPct.toFixed(0)}% — ₹${gap.toFixed(1)} Cr shortfall projected`, ...runRateData.lenderPacing.filter((l) => l.status === "behind").map((l) => `${l.lender}: ${l.pacing_pct.toFixed(0)}% pacing`)], chartData: runRateData.lenderPacing.filter((l) => l.status === "behind").map((l) => ({ label: l.lender, value: l.pacing_pct, color: l.pacing_pct < 50 ? "hsl(350, 65%, 55%)" : "hsl(30, 80%, 55%)", filterContext: { lender: l.lender } })), chartLabel: "Behind-AOP Lenders (% pacing)", chartValueSuffix: "%" } });
     } else {
-      items.push({ id: nextId(), icon: Target, color: runRatePacingPct >= 100 ? "text-emerald-600" : "text-blue-600", title: `AOP Pacing: ${runRatePacingPct.toFixed(0)}%`, detail: `₹${runRateCr.toFixed(1)} Cr/month run-rate vs ₹${monthlyAopTarget.toFixed(1)} Cr target.`, severity: runRatePacingPct >= 100 ? "good" : "info", impactWeight: 25, link: "/disbursal-summary", section: "disb-kpi", expanded: { bullets: [`Run-rate: ₹${runRateCr.toFixed(1)} Cr/month`, `${runRatePacingPct >= 100 ? "On track" : "Slightly behind"} for Feb'26 AOP`], chartData: [], chartLabel: "", chartValueSuffix: "" } });
+      items.push({ id: nextId(), icon: Target, color: runRatePacingPct >= 100 ? "text-emerald-600" : "text-blue-600", title: `AOP Pacing: ${runRatePacingPct.toFixed(0)}%`, detail: `₹${runRateCr.toFixed(1)} Cr/month run-rate vs ₹${monthlyAopTarget.toFixed(1)} Cr target.`, severity: runRatePacingPct >= 100 ? "good" : "info", impactWeight: 25, link: "/disbursal-summary", section: "disb-kpi", expanded: { bullets: [`Run-rate: ₹${runRateCr.toFixed(1)} Cr/month`, `${runRatePacingPct >= 100 ? "On track" : "Slightly behind"} for ${aopMonthLabel} AOP`], chartData: [], chartLabel: "", chartValueSuffix: "" } });
     }
 
     // 6. Critically behind lenders
@@ -1238,7 +1245,7 @@ export default function DisbursalSummary() {
   }, [
     disbGrowth, totalDisbursed, amountCr, byLender, concentrationData,
     runRatePacingPct, runRateCr, monthlyAopTarget, runRateData, convPct,
-    pL, cL,
+    pL, cL, aopMonthLabel,
   ]);
 
   // ─── Sort state for tables ─────────────────────────────────────────
@@ -1287,7 +1294,7 @@ export default function DisbursalSummary() {
     <div>
       <PageHeader
         title="Disbursal Summary"
-        description={`Where disbursements come from (${pL} vs ${cL}), who is performing, and whether we are on track. Day ${pacingDay}/${pacingDaysInMonth} (as of ${pacingAsOf.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "2-digit" })}). CH: MTD ${disbursalWindows.mtdStart}–${disbursalWindows.mtdEnd}, LMTD ${disbursalWindows.lmtdStart}–${disbursalWindows.lmtdEnd}.`}
+        description={`Where disbursements come from (${pL} vs ${cL}), who is performing, and whether we are on track. Day ${pacingDay}/${pacingDaysInMonth} (as of ${pacingAsOf.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "2-digit", timeZone: "UTC" })}). CH (${getReportTimeZone()}): MTD ${disbursalWindows.mtdStart}–${disbursalWindows.mtdEnd}, LMTD ${disbursalWindows.lmtdStart}–${disbursalWindows.lmtdEnd} (parallel prior month, same day-of-month).`}
       />
 
       <div className="p-6 space-y-6">
@@ -1502,7 +1509,7 @@ export default function DisbursalSummary() {
             <CardHeader className="py-3 px-5 bg-primary/10">
               <CardTitle className="text-xs font-semibold">Disbursement Summary (Overall)</CardTitle>
               <p className="text-[10px] text-muted-foreground">
-                Lender | AOP (Feb&apos;26 target, Cr) | MTD | LMSD | Growth% — Total AOP: {totalAop.toLocaleString("en-IN")} Cr
+                Lender | AOP ({aopMonthLabel} target, Cr) | MTD | LMSD | Growth% — Total AOP: {totalAop.toLocaleString("en-IN")} Cr
                 {process.env.NEXT_PUBLIC_BUILD_ID ? ` · Build ${process.env.NEXT_PUBLIC_BUILD_ID}` : ""}
               </p>
             </CardHeader>
@@ -1732,7 +1739,7 @@ export default function DisbursalSummary() {
                 <p className="text-[10px] text-muted-foreground">Loan | Amt(Cr.) | ATS | Avg | Avg PF</p>
                 {disbPeriodTab === "FTD" && (
                   <p className="text-[10px] text-muted-foreground mt-0.5">
-                    FTD = activations on <span className="font-medium text-foreground">{disbursalWindows.ftdDate}</span> (today, local calendar).
+                    FTD = activations on <span className="font-medium text-foreground">{disbursalWindows.ftdDate}</span> (report “today”; see header for MTD/LMTD zone).
                   </p>
                 )}
               </CardHeader>
@@ -2409,7 +2416,7 @@ export default function DisbursalSummary() {
               {trendLenderPopup ? `${trendLenderPopup} — Day-wise trend vs AOP` : ""}
             </DialogTitle>
             <p className="text-[10px] text-muted-foreground">
-              Cumulative disbursement (Cr) by day. Blue = actual, orange = AOP target (Feb&apos;26).
+              Cumulative disbursement (Cr) by day. Blue = actual, orange = AOP target ({aopMonthLabel}).
             </p>
           </DialogHeader>
           {trendLenderPopup && Array.isArray(lenderTrendDayData[trendLenderPopup]) && lenderTrendDayData[trendLenderPopup].length > 0 && (

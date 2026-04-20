@@ -1,4 +1,5 @@
 import Papa from "papaparse";
+import { getCalendarPartsInTimeZone, getReportTimeZone } from "./lending-cc-sql";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -319,27 +320,59 @@ export function formatDelta(val: number): string {
 
 export const AOP_TARGET_CR = 500; // Fallback Feb month target (Cr) when Disbursement_Summary_Overall not loaded
 
-// ─── Month pacing (local calendar; browser TZ on client) ─────────────────────
+// ─── Month pacing (same report TZ as MTD/LMTD in lending-cc-sql) ────────────
 
 export interface MonthPacing {
-  /** Instant used for “as of” in UI copy. */
+  /**
+   * Anchor instant for labels: UTC noon on the report-zone calendar date (see {@link getReportTimeZone}),
+   * so `formatMonthYearEn` / `rollingSixMonthLabels` use UTC getters consistently.
+   */
   referenceDate: Date;
-  /** Length of the calendar month containing `asOf`. */
+  /** Length of the calendar month containing the anchor date in the report zone. */
   daysInMonth: number;
   /**
-   * Day of month (1-based), inclusive through `asOf`.
+   * Day of month (1-based) in the report zone, inclusive through “today” there.
    * Used as run-rate denominator with MTD-through-today.
    */
   dayOfMonth: number;
 }
 
-/** Pacing for the month containing `asOf` (default: system “now”). */
+/** Pacing for the month containing the report-zone calendar date of `asOf` (default: “now”). */
 export function getMonthPacing(asOf: Date = new Date()): MonthPacing {
-  const y = asOf.getFullYear();
-  const m = asOf.getMonth();
-  const dayOfMonth = asOf.getDate();
-  const daysInMonth = new Date(y, m + 1, 0).getDate();
-  return { referenceDate: asOf, daysInMonth, dayOfMonth };
+  const tz = getReportTimeZone();
+  const { y, m0, dom } = getCalendarPartsInTimeZone(asOf, tz);
+  const daysInMonth = new Date(y, m0 + 1, 0).getDate();
+  const referenceDate = new Date(Date.UTC(y, m0, dom, 12, 0, 0));
+  return { referenceDate, daysInMonth, dayOfMonth: dom };
+}
+
+/**
+ * Six month labels ending at `anchor`’s calendar month (1st of each month), e.g. `short` → "Nov 25",
+ * `long` → "Nov 2025" (for charts).
+ */
+export function rollingSixMonthLabels(
+  anchor: Date,
+  style: "short" | "long" = "short",
+): string[] {
+  const y = anchor.getUTCFullYear();
+  const m0 = anchor.getUTCMonth();
+  const labels: string[] = [];
+  for (let offset = 5; offset >= 0; offset--) {
+    const d = new Date(Date.UTC(y, m0 - offset, 1));
+    if (style === "long") {
+      labels.push(d.toLocaleDateString("en-GB", { month: "short", year: "numeric", timeZone: "UTC" }));
+    } else {
+      const mon = d.toLocaleString("en-GB", { month: "short", timeZone: "UTC" });
+      const yy = String(d.getUTCFullYear()).slice(-2);
+      labels.push(`${mon} ${yy}`);
+    }
+  }
+  return labels;
+}
+
+/** e.g. "Apr 2026" for table headers / AOP copy (anchor from {@link getMonthPacing}; uses UTC calendar). */
+export function formatMonthYearEn(anchor: Date): string {
+  return anchor.toLocaleDateString("en-GB", { month: "short", year: "numeric", timeZone: "UTC" });
 }
 
 // ─── Mock monthly trend data (for Executive Summary) ────────────────────────
@@ -359,10 +392,7 @@ export function generateMonthlyTrends(disbursalData: DisbursalSummaryRow[]): Mon
   const avgATS = 1.83;
   const currentAmountCr = (totalDisbursed * avgATS) / 100; // lakhs to crores
 
-  const months = [
-    "Sep 2025", "Oct 2025", "Nov 2025", "Dec 2025",
-    "Jan 2026", "Feb 2026"
-  ];
+  const months = rollingSixMonthLabels(getMonthPacing().referenceDate, "long");
 
   // Simulate growth trend
   const growthFactors = [0.72, 0.78, 0.85, 0.90, 0.95, 1.0];
