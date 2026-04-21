@@ -70,6 +70,8 @@ import { getLendingCCClientConfig } from "@/lib/lending-cc-client";
 import {
   getDisbursalCalendarWindows,
   getReportTimeZone,
+  formatYmdDayMonEn,
+  formatYmdRangeDayMonEn,
   type DisbursalSqlCalendarWindow,
 } from "@/lib/lending-cc-sql";
 import {
@@ -2167,7 +2169,7 @@ export default function FunnelSummary() {
       <GuidedTour />
       <PageHeader
         title={isLenderFiltered ? `Funnel — ${effectiveLender}` : "Funnel Summary"}
-        description={`${pL} vs ${cL} · CH: MTD ${funnelChWindows.mtdStart}–${funnelChWindows.mtdEnd}, LMTD ${funnelChWindows.lmtdStart}–${funnelChWindows.lmtdEnd} (${getReportTimeZone()} calendar). Click a stage to open the Stage Deep Dive.`}
+        description={`${pL} vs ${cL} · CH (${getReportTimeZone()}): MTD through ${formatYmdDayMonEn(funnelChWindows.mtdEnd)} (${formatYmdRangeDayMonEn(funnelChWindows.mtdStart, funnelChWindows.mtdEnd)} · ${funnelChWindows.mtdStart}–${funnelChWindows.mtdEnd}); LMTD through ${formatYmdDayMonEn(funnelChWindows.lmtdEnd)} (${formatYmdRangeDayMonEn(funnelChWindows.lmtdStart, funnelChWindows.lmtdEnd)} · ${funnelChWindows.lmtdStart}–${funnelChWindows.lmtdEnd}). Click a stage to open the Stage Deep Dive.`}
       />
 
       <div className="p-6 space-y-6">

@@ -14,8 +14,8 @@
  * calendar date (inclusive).
  *
  * **LMTD (parallel prior month):** first day of the **previous** calendar month (in that zone) → the **same
- * day-of-month** as the anchor date, **capped** to that month’s length (28 / 30 / 31). Example: anchor 15 Apr
- * (IST) → LMTD 1 Mar–15 Mar; anchor 31 Mar → LMTD 1 Feb–28 Feb.
+ * day-of-month** as the anchor date, **capped** to that month’s length (28 / 30 / 31). Example: anchor **19 Apr**
+ * (IST) → MTD **1 Apr–19 Apr**, LMTD **1 Mar–19 Mar**; anchor 15 Apr → LMTD 1 Mar–15 Mar; anchor 31 Mar → LMTD 1 Feb–28 Feb.
  */
 export interface DisbursalSqlCalendarWindow {
   /** First day of month containing `asOf` (YYYY-MM-DD). */
@@ -34,6 +34,23 @@ function ymdFromParts(year: number, monthIndex0: number, day: number): string {
   const m = String(monthIndex0 + 1).padStart(2, "0");
   const d = String(day).padStart(2, "0");
   return `${year}-${m}-${d}`;
+}
+
+/** `YYYY-MM-DD` → e.g. `19 Apr` (for UI; uses UTC noon so the calendar day is stable). */
+export function formatYmdDayMonEn(ymd: string): string {
+  const seg = ymd.split("-").map((x) => parseInt(x, 10));
+  if (seg.length !== 3 || seg.some((n) => !Number.isFinite(n))) return ymd;
+  const [y, mo, d] = seg;
+  return new Date(Date.UTC(y, mo - 1, d, 12, 0, 0)).toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    timeZone: "UTC",
+  });
+}
+
+/** e.g. `1 Apr–19 Apr` (inclusive range for MTD or LMTD). */
+export function formatYmdRangeDayMonEn(startYmd: string, endYmd: string): string {
+  return `${formatYmdDayMonEn(startYmd)}–${formatYmdDayMonEn(endYmd)}`;
 }
 
 /**

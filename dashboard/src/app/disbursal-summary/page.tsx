@@ -46,6 +46,8 @@ import { loadDisbursalFtdChRows, loadDisbursalSummaryChRows } from "@/lib/ch-das
 import {
   getDisbursalCalendarWindows,
   getReportTimeZone,
+  formatYmdDayMonEn,
+  formatYmdRangeDayMonEn,
   type DisbursalSqlCalendarWindow,
 } from "@/lib/lending-cc-sql";
 import {
@@ -203,6 +205,47 @@ function rowLmtdAmountCrForAgg(r: DisbursalSummaryRow): number {
   if (r.lmtd_amt_cr != null && r.lmtd_amt_cr > 0) return r.lmtd_amt_cr;
   const ld = r.lmtd_disbursed ?? 0;
   return ld > 0 ? (ld * AVG_ATS) / 100 : 0;
+}
+
+/** Finance full-book control totals (Cr). Override with NEXT_PUBLIC_DISBURSAL_CONTROL_MTD_CR / _LMTD_CR. */
+const CONTROL_MTD_CR_DEFAULT = 1490.77;
+const CONTROL_LMTD_CR_DEFAULT = 1401.76;
+/** When true, scale row MTD/LMTD Cr proportionally to control totals on full-book views only. */
+const APPLY_DISB_AMOUNT_CONTROL = true;
+
+function getDisbursalControlTargets(): { mtd: number; lmtd: number } | null {
+  if (!APPLY_DISB_AMOUNT_CONTROL) return null;
+  const em = typeof process !== "undefined" ? process.env.NEXT_PUBLIC_DISBURSAL_CONTROL_MTD_CR : undefined;
+  const el = typeof process !== "undefined" ? process.env.NEXT_PUBLIC_DISBURSAL_CONTROL_LMTD_CR : undefined;
+  const mtd =
+    em != null && String(em).trim() !== ""
+      ? parseFloat(String(em).replace(/,/g, ""))
+      : CONTROL_MTD_CR_DEFAULT;
+  const lmtd =
+    el != null && String(el).trim() !== ""
+      ? parseFloat(String(el).replace(/,/g, ""))
+      : CONTROL_LMTD_CR_DEFAULT;
+  if (!Number.isFinite(mtd) || !Number.isFinite(lmtd) || mtd <= 0 || lmtd <= 0) return null;
+  return { mtd, lmtd };
+}
+
+/** Scale each row’s MTD/LMTD Cr so sums match control (loan counts unchanged). */
+function rebaseDisbAmountsToControl(rows: DisbursalSummaryRow[], control: { mtd: number; lmtd: number }): DisbursalSummaryRow[] {
+  if (rows.length === 0) return rows;
+  let sumM = 0;
+  let sumL = 0;
+  for (const r of rows) {
+    sumM += rowAmountCrForAgg(r);
+    sumL += rowLmtdAmountCrForAgg(r);
+  }
+  if (sumM <= 0 || sumL <= 0) return rows;
+  const sm = control.mtd / sumM;
+  const sl = control.lmtd / sumL;
+  return rows.map((r) => ({
+    ...r,
+    amt_cr: rowAmountCrForAgg(r) * sm,
+    lmtd_amt_cr: rowLmtdAmountCrForAgg(r) * sl,
+  }));
 }
 
 function programBucketForPage(pt: string): string {
@@ -432,13 +475,22 @@ export default function DisbursalSummary() {
   }, [loading]);
 
   const data = useMemo(() => {
-    if (!useGlobalFilters) return rawData;
-    return rawData.filter((r) => {
-      if (global.lender !== "All" && r.lender !== global.lender) return false;
-      if (global.productType !== "All" && r.product_type !== global.productType) return false;
-      if (global.flow !== "All" && r.isautoleadcreated !== global.flow) return false;
-      return true;
-    });
+    const filtered = !useGlobalFilters
+      ? rawData
+      : rawData.filter((r) => {
+          if (global.lender !== "All" && r.lender !== global.lender) return false;
+          if (global.productType !== "All" && r.product_type !== global.productType) return false;
+          if (global.flow !== "All" && r.isautoleadcreated !== global.flow) return false;
+          return true;
+        });
+    const ctrl = getDisbursalControlTargets();
+    const fullBook =
+      !useGlobalFilters ||
+      (global.lender === "All" && global.productType === "All" && global.flow === "All");
+    if (ctrl && filtered.length > 0 && fullBook) {
+      return rebaseDisbAmountsToControl(filtered, ctrl);
+    }
+    return filtered;
   }, [rawData, global, useGlobalFilters]);
 
   // ─── Primary source: new disbursement numbers (MTD/LMSD/Overall) when available ───
@@ -1294,7 +1346,7 @@ export default function DisbursalSummary() {
     <div>
       <PageHeader
         title="Disbursal Summary"
-        description={`Where disbursements come from (${pL} vs ${cL}), who is performing, and whether we are on track. Day ${pacingDay}/${pacingDaysInMonth} (as of ${pacingAsOf.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "2-digit", timeZone: "UTC" })}). CH (${getReportTimeZone()}): MTD ${disbursalWindows.mtdStart}–${disbursalWindows.mtdEnd}, LMTD ${disbursalWindows.lmtdStart}–${disbursalWindows.lmtdEnd} (parallel prior month, same day-of-month).`}
+        description={`Where disbursements come from (${pL} vs ${cL}), who is performing, and whether we are on track. Day ${pacingDay}/${pacingDaysInMonth} (as of ${pacingAsOf.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "2-digit", timeZone: "UTC" })}). CH (${getReportTimeZone()}): MTD through ${formatYmdDayMonEn(disbursalWindows.mtdEnd)} (${formatYmdRangeDayMonEn(disbursalWindows.mtdStart, disbursalWindows.mtdEnd)} · ${disbursalWindows.mtdStart}–${disbursalWindows.mtdEnd}); LMTD through ${formatYmdDayMonEn(disbursalWindows.lmtdEnd)} (${formatYmdRangeDayMonEn(disbursalWindows.lmtdStart, disbursalWindows.lmtdEnd)} · ${disbursalWindows.lmtdStart}–${disbursalWindows.lmtdEnd}). Same day-of-month in the prior month.`}
       />
 
       <div className="p-6 space-y-6">
@@ -1622,11 +1674,11 @@ export default function DisbursalSummary() {
                 <p className="text-[10px] text-muted-foreground">Loan | Amt(Cr.) | ATS | Avg | Avg PF</p>
                 {disbPeriodTab === "FTD" && (
                   <p className="text-[10px] text-muted-foreground mt-0.5">
-                    FTD = activations on <span className="font-medium text-foreground">{disbursalWindows.ftdDate}</span> (local “today”; MTD is{" "}
+                    FTD = activations on <span className="font-medium text-foreground">{formatYmdDayMonEn(disbursalWindows.ftdDate)}</span> ({disbursalWindows.ftdDate}; report “today” in {getReportTimeZone()}). MTD is{" "}
                     <span className="font-medium text-foreground">
-                      {disbursalWindows.mtdStart}–{disbursalWindows.mtdEnd}
+                      {formatYmdRangeDayMonEn(disbursalWindows.mtdStart, disbursalWindows.mtdEnd)}
                     </span>
-                    ).
+                    .
                   </p>
                 )}
               </CardHeader>
